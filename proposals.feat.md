@@ -165,6 +165,15 @@ UI 顶部有**步骤条（stepper）**，当前步骤高亮、完成步骤打勾
 3. `office_translate/gui/launcher.py`：启动 uvicorn（随机端口）→ 有 pywebview 开原生窗口 / 否则开浏览器
 4. `python -m office_translate gui` 入口（cli.py 增加子命令）
 
+**阶段 2 最终实现情况（已完成）**：
+- `office_translate/gui/server.py`：FastAPI 应用，REST 接口：任务列表/新建、extract、source 读取、translated 保存、apply、AI 翻译（google/openai 双引擎 + 术语匹配）、术语库 CRUD、镜像站列表
+- `office_translate/gui/web/index.html`：Vue 3 CDN 单页应用（**无构建、无 node 依赖**），5 步 stepper 界面（任务→提取→AI 翻译→审核→回填）。**设计约束：无渐变、扁平纯色、细边框、淡彩系**（用户明确要求「不要任何渐变，简约线条，淡彩」）
+- `office_translate/gui/launcher.py`：启动 uvicorn（自动选空闲端口）+ 优先 pywebview（未装则回退浏览器自动打开）
+- `python -m office_translate gui` 已接入 CLI
+- `requirements.txt`：+requests、openai、fastapi、uvicorn（deep-translator 不再需要，已改直接请求镜像站）
+- **实测**：GUI 服务启动、前端页面加载（200）、任务列表、AI 翻译（真实 eval_2024 任务前 3 条：Questionnaire:/PRE EVAL/Progress: → 调查问卷：/预评估/进步：）、术语库读取均正常
+- **47 个测试全部通过**（含 GUI 后端 6 个接口测试）
+
 **阶段 3：审核体验打磨**
 - 不确定术语卡片：原文 / 模型译文 / 不确定原因 / 候选译法；接受（选类别入术语库）/ 修改（编辑译文）/ 拒绝（忽略）
 - 审核进度条、可批量接受

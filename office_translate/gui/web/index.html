@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>office_translate</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+/* ===== 基础 ===== */
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --border: #e3e6ea;
+  --text: #2c3e50;
+  --text-dim: #7f8c9b;
+  --accent: #5b8db8;      /* 淡蓝 */
+  --accent-soft: #eaf1f7;
+  --ok: #6da58a;          /* 淡绿 */
+  --warn: #c9a15e;        /* 淡橙 */
+  --err: #c07a7a;         /* 淡红 */
+  --radius: 6px;
+  --shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+/* 无任何渐变：全部扁平纯色 */
+
+/* ===== 布局 ===== */
+.app { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+header { display:flex; align-items:baseline; gap:10px; margin-bottom:24px; }
+header h1 { font-size:20px; font-weight:600; letter-spacing:.5px; }
+header .sub { color:var(--text-dim); font-size:13px; }
+
+/* ===== 步骤条 ===== */
+.stepper { display:flex; gap:8px; margin-bottom:28px; }
+.step {
+  flex:1; display:flex; align-items:center; gap:8px;
+  padding:10px 14px; background:var(--card); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text-dim); cursor:pointer; transition:border-color .15s;
+}
+.step:hover { border-color:var(--accent); }
+.step .num {
+  width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:12px; border:1px solid var(--border); background:var(--bg); color:var(--text-dim);
+  flex-shrink:0;
+}
+.step .label { font-size:13px; white-space:nowrap; }
+.step.done { color:var(--ok); border-color:var(--ok); }
+.step.done .num { background:var(--ok); border-color:var(--ok); color:#fff; }
+.step.active { border-color:var(--accent); background:var(--accent-soft); color:var(--text); }
+.step.active .num { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+/* ===== 卡片 ===== */
+.card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:16px; box-shadow:var(--shadow); }
+.card h3 { font-size:15px; font-weight:600; margin-bottom:12px; }
+.card .desc { color:var(--text-dim); font-size:13px; margin-bottom:14px; }
+
+/* ===== 表单 ===== */
+.row { margin-bottom:12px; }
+.row label { display:block; font-size:13px; color:var(--text-dim); margin-bottom:4px; }
+input, select, textarea {
+  width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius);
+  font-size:14px; font-family:inherit; background:#fff; color:var(--text);
+}
+input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); }
+input[type=file] { padding:6px; }
+textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consolas, monospace; font-size:13px; }
+.inline { display:flex; gap:8px; }
+.inline > * { flex:1; }
+
+/* ===== 按钮 ===== */
+.btn {
+  display:inline-flex; align-items:center; gap:6px; padding:8px 18px;
+  border:1px solid var(--border); border-radius:var(--radius); background:#fff; color:var(--text);
+  font-size:14px; cursor:pointer; transition:all .15s;
+}
+.btn:hover { border-color:var(--accent); color:var(--accent); }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn.primary:hover { opacity:.9; color:#fff; }
+.btn.ok { background:var(--ok); border-color:var(--ok); color:#fff; }
+.btn.ok:hover { opacity:.9; color:#fff; }
+.btn.danger { color:var(--err); border-color:var(--err); }
+.btn.danger:hover { background:#fdf5f5; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.btn.sm { padding:4px 10px; font-size:12px; }
+
+/* ===== 列表 ===== */
+.list { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.list-item { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border); }
+.list-item:last-child { border-bottom:none; }
+.list-item:hover { background:#fafbfc; }
+.item-main { flex:1; min-width:0; }
+.item-title { font-size:14px; }
+.item-meta { font-size:12px; color:var(--text-dim); }
+
+/* ===== 标签 ===== */
+.tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin-right:6px; }
+.tag.blue { background:var(--accent-soft); color:var(--accent); }
+.tag.green { background:#e8f3ee; color:var(--ok); }
+
+/* ===== 进度/状态 ===== */
+.status { display:flex; align-items:center; gap:8px; font-size:13px; }
+.status .dot { width:8px; height:8px; border-radius:50%; }
+.dot.ok { background:var(--ok); }
+.dot.warn { background:var(--warn); }
+.dot.err { background:var(--err); }
+.progress-bar { height:6px; background:var(--bg); border:1px solid var(--border); border-radius:3px; overflow:hidden; }
+.progress-bar .fill { height:100%; background:var(--accent); transition:width .2s; }
+
+/* ===== 术语卡片 ===== */
+.term-card { border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:10px; }
+.term-card .term-src { font-weight:600; font-size:14px; }
+.term-card .term-reason { color:var(--text-dim); font-size:13px; margin:4px 0; }
+.term-card .term-candidate { font-size:13px; color:var(--warn); }
+.term-actions { display:flex; gap:6px; margin-top:10px; }
+
+/* ===== 空状态 ===== */
+.empty { text-align:center; color:var(--text-dim); padding:32px 0; font-size:13px; }
+
+/* ===== toast ===== */
+#toast {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:#333; color:#fff; padding:10px 22px; border-radius:6px; font-size:13px;
+  z-index:1000; opacity:0; transition:opacity .2s; pointer-events:none;
+}
+#toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="app">
+    <header>
+      <h1>office_translate</h1>
+      <span class="sub">导出 · AI 翻译 · 审核 · 回填</span>
+    </header>
+
+    <!-- 步骤条 -->
+    <div class="stepper">
+      <div v-for="(s, i) in steps" :key="i" class="step" :class="{done: step > i, active: step === i}" @click="step = i">
+        <span class="num">{{ step > i ? '✓' : i + 1 }}</span>
+        <span class="label">{{ s }}</span>
+      </div>
+    </div>
+
+    <!-- 步骤 1：任务 -->
+    <div v-if="step === 0" class="card">
+      <h3>选择或新建任务</h3>
+      <p class="desc">每个翻译任务对应一个工作目录，原始文档会被复制进工作区。</p>
+      <div class="row">
+        <label>输入文件路径</label>
+        <input v-model="newJobInput" placeholder="/path/to/file.xlsx（.xls 会自动转换）">
+      </div>
+      <div class="row">
+        <label>任务名（可选，缺省按时间戳自动生成）</label>
+        <input v-model="newJobName" placeholder="如 eval_2024">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn primary" @click="createJob" :disabled="!newJobInput">新建任务</button>
+        <button class="btn" @click="refreshJobs">刷新</button>
+      </div>
+      <div v-if="jobs.length" class="list" style="margin-top:16px;">
+        <div v-for="j in jobs" :key="j.job" class="list-item" :class="{selected: currentJob === j.job}" style="cursor:pointer;">
+          <div class="item-main" @click="selectJob(j)">
+            <div class="item-title">{{ j.job }}</div>
+            <div class="item-meta">{{ j.input }}</div>
+          </div>
+          <button class="btn sm" @click="selectJob(j)">选择</button>
+        </div>
+      </div>
+      <div v-else class="empty" style="margin-top:12px;">暂无任务，输入文件路径新建一个</div>
+    </div>
+
+    <!-- 步骤 2：提取 -->
+    <div v-if="step === 1" class="card">
+      <h3>提取原文</h3>
+      <p class="desc" v-if="currentJob">任务：<strong>{{ currentJob }}</strong></p>
+      <p class="desc" v-else>请先选择任务</p>
+      <button class="btn primary" @click="doExtract" :disabled="!currentJob || extracting">
+        {{ extracting ? '提取中…' : '开始提取' }}
+      </button>
+      <div v-if="extractInfo" class="list" style="margin-top:16px;">
+        <div class="list-item"><span class="item-title">工作表</span><span class="item-meta">{{ extractInfo.sheets.join(', ') }}</span></div>
+        <div class="list-item"><span class="item-title">可翻译单元格</span><span class="item-meta">{{ extractInfo.cells_translatable }}</span></div>
+        <div class="list-item"><span class="item-title">去重文本</span><span class="item-meta">{{ extractInfo.unique_texts }}</span></div>
+      </div>
+    </div>
+
+    <!-- 步骤 3：AI 翻译 -->
+    <div v-if="step === 2" class="card">
+      <h3>AI 翻译</h3>
+      <div class="row inline">
+        <div>
+          <label>引擎</label>
+          <select v-model="engine">
+            <option value="google">Google（镜像站）</option>
+            <option value="openai">OpenAI 兼容</option>
+          </select>
+        </div>
+        <div v-if="engine === 'openai'">
+          <label>Base URL</label>
+          <input v-model="openaiBaseUrl" placeholder="https://api.openai.com/v1">
+        </div>
+        <div v-if="engine === 'openai'">
+          <label>API Key</label>
+          <input v-model="openaiApiKey" type="password" placeholder="sk-...">
+        </div>
+        <div v-if="engine === 'openai'">
+          <label>模型</label>
+          <input v-model="openaiModel" placeholder="gpt-4o-mini">
+        </div>
+      </div>
+      <div class="row">
+        <label>术语库类别（勾选要使用的）</label>
+        <div v-if="glossaryCategories.length">
+          <label v-for="c in glossaryCategories" :key="c" style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" :value="c" v-model="selectedCategories" style="width:auto;"> {{ c }}
+          </label>
+        </div>
+        <span v-else class="item-meta">暂无术语库</span>
+      </div>
+      <button class="btn primary" @click="doTranslate" :disabled="!currentJob || translating">
+        {{ translating ? '翻译中…' : '开始 AI 翻译' }}
+      </button>
+      <div v-if="translating" class="progress-bar" style="margin-top:14px;">
+        <div class="fill" :style="{width: translateProgress + '%'}"></div>
+      </div>
+      <div v-if="translateResults.length" class="list" style="margin-top:16px;">
+        <div v-for="r in translateResults" :key="r.id" class="list-item">
+          <div class="item-main">
+            <div class="item-title">{{ r.translation }}</div>
+            <div class="item-meta" v-if="r.uncertain_terms.length">
+              ⚠ 不确定：{{ r.uncertain_terms.length }} 个术语
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 步骤 4：审核 -->
+    <div v-if="step === 3" class="card">
+      <h3>审核不确定术语</h3>
+      <p class="desc">模型认为把握不足的术语会列出，接受则沉淀入术语库（选类别），可修改或忽略。</p>
+      <div v-if="pendingTerms.length">
+        <div v-for="(t, i) in pendingTerms" :key="i" class="term-card">
+          <div class="term-src">{{ t.term }}</div>
+          <div class="term-reason">原因：{{ t.reason || '未说明' }}</div>
+          <div class="term-candidate" v-if="t.candidate">候选译法：{{ t.candidate }}</div>
+          <div class="row" style="margin-top:8px;">
+            <label>最终译文（可修改）</label>
+            <input v-model="t.target">
+          </div>
+          <div class="term-actions">
+            <button class="btn sm ok" @click="acceptTerm(t)">✓ 接受并入库</button>
+            <button class="btn sm" @click="ignoreTerm(i)">忽略</button>
+            <select v-model="t.category" class="sm" style="width:auto;margin-left:auto;padding:4px 8px;font-size:12px;">
+              <option v-for="c in glossaryCategories" :key="c" :value="c">{{ c }}</option>
+              <option value="__new">＋ 新建类别…</option>
+            </select>
+          </div>
+          <div v-if="t.category === '__new'" class="row" style="margin-top:8px;">
+            <label>新类别名</label>
+            <input v-model="t.newCategory" placeholder="如 汽车行业">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn ok" @click="acceptAll">全部接受</button>
+          <button class="btn" @click="skipAll">全部忽略</button>
+        </div>
+      </div>
+      <div v-else class="empty">
+        <span v-if="translated">已审核完毕 ✓ 可进入下一步</span>
+        <span v-else>还没有不确定术语，先完成 AI 翻译</span>
+      </div>
+    </div>
+
+    <!-- 步骤 5：回填 -->
+    <div v-if="step === 4" class="card">
+      <h3>回填输出</h3>
+      <p class="desc">把译文写回文档，产出「仅译文」与「原文-译文对照」两份文件，样式完全保留。</p>
+      <div class="row">
+        <label>译文文本（直接编辑，或由 AI 翻译生成后自动填充）</label>
+        <textarea v-model="translatedTxt" rows="10" style="font-family:monospace;"></textarea>
+      </div>
+      <button class="btn primary" @click="doApply" :disabled="!currentJob || applying">
+        {{ applying ? '回填中…' : '生成输出文件' }}
+      </button>
+      <div v-if="applyInfo" class="list" style="margin-top:16px;">
+        <div class="list-item"><span class="item-title">仅译文版</span><span class="item-meta">{{ applyInfo.translated_output }}</span></div>
+        <div class="list-item"><span class="item-title">对照版</span><span class="item-meta">{{ applyInfo.bilingual_output }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" :class="{show: toastMsg}">{{ toastMsg }}</div>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      steps: ['任务', '提取', 'AI 翻译', '审核', '回填'],
+      step: 0,
+      jobs: [],
+      currentJob: null,
+      newJobInput: '',
+      newJobName: '',
+      extracting: false,
+      extractInfo: null,
+      engine: 'google',
+      openaiBaseUrl: 'https://api.openai.com/v1',
+      openaiApiKey: '',
+      openaiModel: 'gpt-4o-mini',
+      translating: false,
+      translateProgress: 0,
+      translateResults: [],
+      glossaryCategories: [],
+      selectedCategories: [],
+      pendingTerms: [],
+      translated: false,
+      applying: false,
+      applyInfo: null,
+      translatedTxt: '',
+      toastMsg: '',
+      toastTimer: null,
+    };
+  },
+  methods: {
+    toast(msg) {
+      this.toastMsg = msg;
+      clearTimeout(this.toastTimer);
+      this.toastTimer = setTimeout(() => { this.toastMsg = ''; }, 2500);
+    },
+    async api(url, opts = {}) {
+      const r = await fetch(url, { headers: {'Content-Type': 'application/json'}, ...opts });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.detail || r.statusText);
+      }
+      return r.json();
+    },
+    async refreshJobs() {
+      try {
+        this.jobs = await this.api('/api/jobs');
+        this.loadGlossary();
+      } catch (e) { this.toast('加载任务失败: ' + e.message); }
+    },
+    async loadGlossary() {
+      try {
+        const g = await this.api('/api/glossary');
+        this.glossaryCategories = Object.keys(g.categories || {});
+        // 默认全部选中
+        this.selectedCategories = [...this.glossaryCategories];
+      } catch (e) { this.toast('加载术语库失败'); }
+    },
+    async createJob() {
+      try {
+        await this.api('/api/jobs', {
+          method: 'POST',
+          body: JSON.stringify({job: this.newJobName || null, input: this.newJobInput, sep: '\\n'}),
+        });
+        this.newJobInput = ''; this.newJobName = '';
+        await this.refreshJobs();
+        this.toast('任务已创建');
+      } catch (e) { this.toast('创建失败: ' + e.message); }
+    },
+    selectJob(j) {
+      this.currentJob = j.job;
+      this.step = 1;
+      this.toast('已选择任务: ' + j.job);
+    },
+    async doExtract() {
+      this.extracting = true;
+      try {
+        this.extractInfo = await this.api(`/api/jobs/${this.currentJob}/extract`, {method: 'POST'});
+        this.toast(`提取完成，${this.extractInfo.unique_texts} 条文本`);
+        this.step = 2;
+      } catch (e) { this.toast('提取失败: ' + e.message); }
+      finally { this.extracting = false; }
+    },
+    async doTranslate() {
+      this.translating = true; this.translateProgress = 0; this.translateResults = [];
+      let texts;
+      try {
+        texts = await this.loadSourceTexts();
+      } catch (e) {
+        this.translating = false;
+        this.toast('读取原文失败: ' + e.message);
+        return;
+      }
+      if (!texts.length) { this.translating = false; this.toast('没有可翻译文本'); return; }
+      try {
+        const body = {
+          texts, source: 'en', target: 'zh-CN', engine: this.engine,
+          glossary_categories: this.selectedCategories,
+          mirrors: null,
+          provider_config: this.engine === 'openai'
+            ? {base_url: this.openaiBaseUrl, api_key: this.openaiApiKey, model: this.openaiModel}
+            : undefined,
+        };
+        const res = await this.api('/api/translate', {method: 'POST', body: JSON.stringify(body)});
+        this.translateResults = res.results;
+        this.pendingTerms = this.collectTerms(res.results);
+        this.translatedTxt = res.results.map(r => r.translation).join('\n');
+        this.translateProgress = 100;
+        this.toast(`翻译完成，${this.pendingTerms.length} 个不确定术语待审核`);
+        this.translated = true;
+        if (this.pendingTerms.length) this.step = 3;
+        else this.step = 4;
+      } catch (e) { this.toast('翻译失败: ' + e.message); }
+      finally { this.translating = false; }
+    },
+    async loadSourceTexts() {
+      // 读取 source.txt 的全部行作为待译文本
+      const src = await this.api(`/api/jobs/${this.currentJob}/source`);
+      return src.texts;
+    },
+    collectTerms(results) {
+      const seen = new Set();
+      const terms = [];
+      for (const r of results) {
+        for (const t of r.uncertain_terms || []) {
+          if (t.term && !seen.has(t.term)) {
+            seen.add(t.term);
+            terms.push({...t, target: t.candidate || '', category: this.glossaryCategories[0] || '默认'});
+          }
+        }
+      }
+      return terms;
+    },
+    async acceptTerm(t) {
+      const category = t.category === '__new' ? (t.newCategory || '默认') : t.category;
+      try {
+        await this.api('/api/glossary/terms', {
+          method: 'POST',
+          body: JSON.stringify({category, source: t.term, target: t.target || t.term, note: t.reason || ''}),
+        });
+        this.pendingTerms = this.pendingTerms.filter(x => x !== t);
+        await this.loadGlossary();
+        this.toast('已入库');
+      } catch (e) { this.toast('入库失败: ' + e.message); }
+    },
+    ignoreTerm(i) { this.pendingTerms.splice(i, 1); },
+    async acceptAll() {
+      for (const t of [...this.pendingTerms]) await this.acceptTerm(t);
+    },
+    skipAll() { this.pendingTerms = []; },
+    async doApply() {
+      this.applying = true;
+      try {
+        // 保存译文到 translated.txt
+        await this.api(`/api/jobs/${this.currentJob}/translated`, {
+          method: 'POST',
+          body: JSON.stringify({text: this.translatedTxt}),
+        });
+        this.applyInfo = await this.api(`/api/jobs/${this.currentJob}/apply`, {
+          method: 'POST', body: JSON.stringify({sep: '\\n'}),
+        });
+        this.toast('回填完成');
+      } catch (e) { this.toast('回填失败: ' + e.message); }
+      finally { this.applying = false; }
+    },
+  },
+  mounted() { this.refreshJobs(); },
+}).mount('#app');
+</script>
+</body>
+</html>
