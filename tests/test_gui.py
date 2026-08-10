@@ -1,5 +1,7 @@
 """GUI 后端（FastAPI）接口测试：任务/提取/翻译/审核/apply/术语库。"""
 
+import os
+
 import openpyxl
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +35,27 @@ def test_health(client):
     r = client.get("/api/jobs")
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_upload_file(client, tmp_path):
+    # 浏览器原生文件选择器 → 上传 → 保存到 input/
+    r = client.post("/api/upload", files={"file": ("问卷.xlsx", b"fake-xlsx-content", "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["filename"] == "问卷.xlsx"
+    assert data["path"].endswith("问卷.xlsx")
+    assert os.path.isfile(data["path"])
+    assert open(data["path"], "rb").read() == b"fake-xlsx-content"
+
+
+def test_create_job_auto_name(client, tmp_path):
+    # 不传 job → 自动按时间戳命名
+    r = client.post("/api/jobs", json={"job": None, "input": str(tmp_path / "input" / "sample.xlsx")})
+    assert r.status_code == 200, r.text
+    info = r.json()
+    import re
+    assert re.fullmatch(r"\d{8}_\d{6}", info["job"]), info["job"]
+    assert os.path.isdir(tmp_path / "work" / info["job"])
 
 
 def test_create_and_extract(client, tmp_path):

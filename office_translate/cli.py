@@ -25,7 +25,6 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
 from typing import Any, Sequence
 
 from . import config as config_mod
@@ -37,20 +36,9 @@ from .escape import decode_escapes
 _PADDING = 20
 
 
-def _auto_job_name(config: dict[str, Any]) -> str:
-    """生成默认任务名：时间戳 YYYYMMDD_HHMMSS，重名时追加 _1/_2。"""
-    base = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name = base
-    i = 1
-    while os.path.isdir(config_mod.job_dir(config, name)):
-        name = f"{base}_{i}"
-        i += 1
-    return name
-
-
 def _cmd_init(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
-    job = args.job if args.job else _auto_job_name(cfg)
+    job = args.job if args.job else config_mod.auto_job_name(cfg)
 
     # .xls 输入：自动转换为 .xlsx（Windows + Excel），否则提示手动转换
     ext = os.path.splitext(args.input)[1].lower()

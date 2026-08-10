@@ -15,7 +15,7 @@ import os
 import time
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -146,31 +146,6 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
         except OSError as e:
             raise HTTPException(500, f"保存设置失败: {e}") from e
 
-    @app.post("/api/pick_file")
-    def pick_file():
-        """唤起系统原生文件选择器（tkinter），返回所选路径。"""
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-
-            root = tk.Tk()
-            root.withdraw()  # 隐藏主窗口
-            path = filedialog.askopenfilename(
-                title="选择要翻译的文档",
-                filetypes=[
-                    ("Excel / Word", "*.xlsx *.xls *.docx"),
-                    ("所有文件", "*.*"),
-                ],
-            )
-            root.destroy()
-            if not path:
-                raise HTTPException(400, "未选择文件")
-            return {"path": path}
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(500, f"无法打开文件选择器: {e}") from e
-
     # ---------- 任务 ----------
 
     @app.get("/api/jobs")
@@ -185,10 +160,28 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
         if not input_path:
             raise HTTPException(400, "缺少 input 字段")
         try:
-            info = config_mod.init_job(cfg, job or "", input_path, sep)
+            # job 为 None/空时 init_job 自动按时间戳命名
+            info = config_mod.init_job(cfg, job, input_path, sep)
             return info
         except config_mod.ConfigError as e:
             raise HTTPException(400, str(e)) from e
+
+    @app.post("/api/upload")
+    async def upload_file(file: UploadFile = File(...)):
+        """浏览器原生文件选择器选中的文件上传到这里，保存到 input/ 并返回路径。"""
+        filename = os.path.basename(file.filename or "upload.bin")
+        # 不可断行空格规范化（与 init_job 一致）
+        filename = filename.replace(" ", " ")
+        input_dir = os.path.join(os.path.dirname(settings_path), "input")
+        os.makedirs(input_dir, exist_ok=True)
+        dest = os.path.join(input_dir, filename)
+        try:
+            with open(dest, "wb") as f:
+                content = await file.read()
+                f.write(content)
+        except OSError as e:
+            raise HTTPException(500, f"保存上传文件失败: {e}") from e
+        return {"path": dest, "filename": filename}
 
     @app.post("/api/jobs/{job}/extract")
     def job_extract(job: str):

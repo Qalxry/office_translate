@@ -141,8 +141,7 @@ def test_auto_translate_google(project, monkeypatch):
 
 def test_init_auto_job_suffix_on_collision(project, monkeypatch):
     # 时间戳重名时自动追加 _1 后缀
-    import re
-    from office_translate import cli as cli_mod
+    from office_translate import config as config_mod
 
     root = project
     cfg = str(root / "config.yaml")
@@ -152,7 +151,7 @@ def test_init_auto_job_suffix_on_collision(project, monkeypatch):
         @staticmethod
         def now():
             return type("F", (), {"strftime": staticmethod(lambda fmt: "20260810_120000")})()
-    monkeypatch.setattr(cli_mod, "datetime", FakeDateTime)
+    monkeypatch.setattr(config_mod, "datetime", FakeDateTime)
     assert main(["-c", cfg, "init", "-i", sample]) == 0
     assert main(["-c", cfg, "init", "-i", sample]) == 0
     names = sorted(d.name for d in (root / "work").iterdir() if d.is_dir())

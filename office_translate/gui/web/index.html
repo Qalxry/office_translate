@@ -287,7 +287,8 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <label>输入文件路径</label>
         <div class="inline">
           <input v-model="newJobInput" placeholder="/path/to/file.xlsx（.xls 会自动转换）">
-          <button class="btn" style="flex:0 0 auto;" @click="pickFile" :disabled="pickingFile">{{ pickingFile ? '打开中…' : '浏览文件…' }}</button>
+          <button class="btn" style="flex:0 0 auto;" @click="$refs.fileInput.click()" :disabled="uploadingFile">{{ uploadingFile ? '上传中…' : '浏览文件…' }}</button>
+          <input type="file" ref="fileInput" style="display:none;" @change="onFileSelected">
         </div>
       </div>
       <div class="row">
@@ -453,7 +454,7 @@ createApp({
       engine: 'google',
       activeProviderKey: 'openai',
       activeModel: 'gpt-4o-mini',
-      pickingFile: false,
+      uploadingFile: false,
       translating: false,
       translateProgress: 0,
       translateResults: [],
@@ -563,13 +564,27 @@ createApp({
         this.toast('已删除');
       } catch (e) { this.toast('删除失败: ' + e.message); }
     },
-    async pickFile() {
-      this.pickingFile = true;
+    async onFileSelected(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      this.uploadingFile = true;
       try {
-        const r = await this.api('/api/pick_file', {method: 'POST'});
-        this.newJobInput = r.path;
-      } catch (e) { this.toast('无法打开文件选择器: ' + e.message); }
-      finally { this.pickingFile = false; }
+        // 浏览器原生文件选择器 → 上传到后端 → 返回服务器路径
+        const fd = new FormData();
+        fd.append('file', file);
+        const r = await fetch('/api/upload', {method: 'POST', body: fd});
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.detail || r.statusText);
+        }
+        const res = await r.json();
+        this.newJobInput = res.path;
+        this.toast('文件已选择');
+      } catch (err) { this.toast('上传失败: ' + err.message); }
+      finally {
+        this.uploadingFile = false;
+        e.target.value = '';  // 允许重复选同一文件
+      }
     },
     async loadSettings() {
       try {

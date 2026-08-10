@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from datetime import datetime
 from typing import Any
 
 import yaml
@@ -65,15 +66,28 @@ def job_dir(config: dict[str, Any], job: str) -> str:
     return os.path.join(config["work_dir"], job)
 
 
+def auto_job_name(config: dict[str, Any]) -> str:
+    """生成默认任务名：时间戳 YYYYMMDD_HHMMSS，重名时追加 _1/_2。"""
+    base = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = base
+    i = 1
+    while os.path.isdir(job_dir(config, name)):
+        name = f"{base}_{i}"
+        i += 1
+    return name
+
+
 def init_job(
     config: dict[str, Any],
-    job: str,
+    job: str | None,
     input_path: str,
     sep: str | None = None,
 ) -> dict[str, Any]:
     """创建任务：建目录、复制原始文件、写 job.yaml。
 
-复制进任务目录时，文件名里的不可断行空格（U+00A0）会替换为普通空格。"""
+- job 为 None 或空时按时间戳自动命名。
+- 复制进任务目录时，文件名里的不可断行空格（U+00A0）会替换为普通空格。"""
+    job = job or auto_job_name(config)
     _validate_job_name(job)
     if not os.path.isfile(input_path):
         raise ConfigError(f"输入文件不存在: {input_path}")
