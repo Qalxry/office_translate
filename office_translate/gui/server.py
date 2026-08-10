@@ -224,6 +224,20 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
         except Exception as e:
             raise HTTPException(400, str(e)) from e
 
+    @app.get("/api/jobs/{job}/translated_file")
+    def job_read_translated(job: str):
+        """读取已保存的 translated.txt（手动翻译 tab 用）。"""
+        try:
+            info = config_mod.load_job(cfg, job)
+            if not os.path.isfile(info["translated_txt"]):
+                return {"text": ""}
+            with open(info["translated_txt"], "r", encoding="utf-8") as f:
+                return {"text": f.read()}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, str(e)) from e
+
     @app.post("/api/jobs/{job}/apply")
     def job_apply(job: str, body: dict):
         try:

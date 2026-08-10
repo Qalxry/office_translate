@@ -96,7 +96,7 @@ class OpenAICompatProvider(Provider):
         glossary: str = "",
     ) -> str:
         """带术语库的 chat 调用，返回模型原始输出（含 JSON）。"""
-        from ..translator import _SYSTEM_TMPL
+        from .translator import _SYSTEM_TMPL
 
         system = _SYSTEM_TMPL.format(source=source, target=target, glossary=glossary)
         try:

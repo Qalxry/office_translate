@@ -79,6 +79,11 @@ def test_create_and_extract(client, tmp_path):
     r = client.post("/api/jobs/job1/translated", json={"text": "你好\n世界"})
     assert r.status_code == 200
 
+    # 读取译文（translated_file）
+    r = client.get("/api/jobs/job1/translated_file")
+    assert r.status_code == 200
+    assert r.json()["text"] == "你好\n世界\n"
+
     # apply
     r = client.post("/api/jobs/job1/apply", json={"sep": "\\n"})
     assert r.status_code == 200, r.text
