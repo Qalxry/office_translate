@@ -58,3 +58,24 @@ def unescape_text(text: str) -> str:
         out.append(ch)
         i += 1
     return "".join(out)
+
+
+def decode_escapes(text: str) -> str:
+    """把用户输入中的字面转义序列（\\n \\r \\t \\\\）还原为真实字符。
+
+    仅用于分隔符等配置值，与 unescape_text（txt 内容的约定）无关：
+    未知转义原样保留，非 ASCII 字符不受影响。
+    """
+    mapping = {"\\": "\\", "n": "\n", "r": "\r", "t": "\t"}
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n and text[i + 1] in mapping:
+            out.append(mapping[text[i + 1]])
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)

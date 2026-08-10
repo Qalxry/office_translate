@@ -1,4 +1,13 @@
-test/
+# 原始输入文档（init 时会复制进工作区）
+input/
+# 工作区：每个翻译任务一个文件夹
 work/
-__pycache__/
+# 测试样例数据
+test/
 test_raw/
+# 归档的旧方案（软删除，不参与版本控制）
+.old/
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

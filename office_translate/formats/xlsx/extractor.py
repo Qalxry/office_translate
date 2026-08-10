@@ -17,7 +17,7 @@ from typing import Any, Iterable
 
 import openpyxl
 
-from .escape import escape_text
+from ...escape import escape_text
 
 
 @dataclass

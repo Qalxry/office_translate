@@ -20,7 +20,7 @@ from typing import Any
 
 import openpyxl
 
-from .escape import unescape_text
+from ...escape import unescape_text
 
 
 class TranslationError(Exception):
