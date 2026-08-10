@@ -160,6 +160,74 @@ def test_translate_google_mocked(client, monkeypatch):
     assert results[1]["translation"] == "译:World"
 
 
+def test_translate_stream_sse(client, monkeypatch):
+    """流式翻译：验证 SSE 事件流（meta/progress/done/end）。"""
+    import office_translate.gui.server as server_mod
+
+    class FakeStreamGoogle:
+        name = "google"
+
+        def __init__(self, mirrors):
+            pass
+
+        def translate_stream(self, texts, source, target):
+            # 模拟对块内多行合并翻译
+            for i, t in enumerate(texts):
+                translated_lines = [f"译:{line}" for line in t.split("\n")]
+                yield {"id": i, "type": "done", "translation": "\n".join(translated_lines), "uncertain_terms": [], "thinking": None}
+
+    monkeypatch.setattr(server_mod, "GoogleProvider", FakeStreamGoogle)
+
+    r = client.post("/api/translate/stream", json={"texts": ["A", "B"], "engine": "google"})
+    assert r.status_code == 200
+    assert "text/event-stream" in r.headers.get("content-type", "")
+
+    body = r.text
+    assert '"type": "meta"' in body
+    assert '"type": "progress"' in body
+    assert '"type": "end"' in body
+    # 两条译文都产出（SSE 中 JSON 可能被 ensure_ascii 转义，解码后检查）
+    import json as _json
+
+    translations = []
+    for line in body.splitlines():
+        if line.startswith("data: "):
+            try:
+                d = _json.loads(line[6:])
+                if d.get("type") == "done":
+                    translations.append(d.get("translation", ""))
+            except Exception:
+                pass
+    assert "译:A" in translations and "译:B" in translations
+
+
+def test_translate_stream_chunks(client, monkeypatch):
+    """流式翻译：验证按行分块后行数不变、进度正确。"""
+    import office_translate.gui.server as server_mod
+
+    class FakeStreamGoogle:
+        name = "google"
+
+        def __init__(self, mirrors):
+            pass
+
+        def translate_stream(self, texts, source, target):
+            for i, t in enumerate(texts):
+                # 返回块内多行（带换行）
+                yield {"id": i, "type": "done", "translation": "\n".join(t.split("\n")), "uncertain_terms": [], "thinking": None}
+
+    monkeypatch.setattr(server_mod, "GoogleProvider", FakeStreamGoogle)
+
+    texts = ["L1", "L2", "L3", "L4", "L5"]
+    r = client.post("/api/translate/stream", json={"texts": texts, "engine": "google"})
+    assert r.status_code == 200
+    body = r.text
+    # 5 条 done（按行回拆）
+    assert body.count('"type": "done"') == 5
+    # 进度到 100
+    assert '"progress": 100' in body
+
+
 def test_translate_unknown_engine(client):
     r = client.post("/api/translate", json={"texts": ["Hello"], "engine": "nope"})
     assert r.status_code == 400

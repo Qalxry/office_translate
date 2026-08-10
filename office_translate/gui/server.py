@@ -42,7 +42,7 @@ DEFAULT_MIRRORS = [
     "https://gt1.yifan.ai",
 ]
 
-# 预置供应商（base_url + 常用模型）
+# 预置供应商（base_url + 常用模型 + 模型上下文 token 数，用于分块）
 DEFAULT_PROVIDERS = {
     "openai": {
         "name": "OpenAI",
@@ -50,6 +50,7 @@ DEFAULT_PROVIDERS = {
         "api_key": "",
         "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
         "default_model": "gpt-4o-mini",
+        "model_context": 128000,
     },
     "deepseek": {
         "name": "DeepSeek",
@@ -57,6 +58,7 @@ DEFAULT_PROVIDERS = {
         "api_key": "",
         "models": ["deepseek-chat", "deepseek-reasoner"],
         "default_model": "deepseek-chat",
+        "model_context": 128000,
     },
     "claude": {
         "name": "Claude (OpenAI 兼容)",
@@ -64,6 +66,7 @@ DEFAULT_PROVIDERS = {
         "api_key": "",
         "models": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
         "default_model": "claude-sonnet-5",
+        "model_context": 200000,
     },
     "ollama": {
         "name": "Ollama (本地)",
@@ -71,6 +74,7 @@ DEFAULT_PROVIDERS = {
         "api_key": "ollama",
         "models": ["qwen2.5", "llama3.1"],
         "default_model": "qwen2.5",
+        "model_context": 32768,
     },
 }
 
@@ -403,6 +407,97 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
             else:
                 raise HTTPException(400, f"未知引擎: {engine}")
             return {"results": results, "matched_glossary": matched}
+        except HTTPException:
+            raise
+        except ProviderError as e:
+            raise HTTPException(502, str(e)) from e
+        except Exception as e:
+            raise HTTPException(500, str(e)) from e
+
+    @app.post("/api/translate/stream")
+    async def translate_stream_api(body: dict):
+        """流式翻译：SSE 逐条推送（含 thinking 与内容增量），按行分块。"""
+        from fastapi.responses import StreamingResponse
+        import json as _json
+
+        from ..ai.chunking import chunk_for_engine
+
+        settings = _load_settings()
+        ai_cfg = settings.get("ai", GUI_CONFIG_DEFAULTS["ai"])
+        texts = body.get("texts", [])
+        source = body.get("source", ai_cfg.get("source_lang", "en"))
+        target = body.get("target", ai_cfg.get("target_lang", "zh-CN"))
+        engine = body.get("engine", ai_cfg.get("engine", "google"))
+        categories = body.get("glossary_categories")
+        model_context = body.get("model_context") or ai_cfg.get("model_context")
+
+        glossary = load_glossary(glossary_path)
+        matched = match_terms(glossary, categories, texts)
+
+        try:
+            if engine == "google":
+                mirrors = body.get("mirrors") or ai_cfg.get("mirrors") or DEFAULT_MIRRORS
+                provider = GoogleProvider(mirrors)
+            elif engine == "openai":
+                pc = body.get("provider_config") or {}
+                provider = OpenAICompatProvider(
+                    base_url=pc.get("base_url", "https://api.openai.com/v1"),
+                    api_key=pc.get("api_key", ""),
+                    model=pc.get("model", "gpt-4o-mini"),
+                )
+            else:
+                raise HTTPException(400, f"未知引擎: {engine}")
+
+            total = len(texts)
+            # 智能分块（按行，不截断行）
+            chunks = chunk_for_engine(texts, engine, model_context=model_context)
+
+            # 每块内各行行号偏移（用于进度按行算）
+            line_offset: dict[int, int] = {}  # 块索引 → 起始行号
+            offset = 0
+            for i, chunk in enumerate(chunks):
+                line_offset[i] = offset
+                offset += len(chunk)
+
+            def event_stream():
+                yield f"data: {_json.dumps({'type': 'meta', 'total': total, 'chunks': len(chunks), 'matched_glossary': matched}, ensure_ascii=False)}\n\n"
+                done_lines = 0
+                # 逐块翻译；块内多行合并为一段（保留换行）
+                for ci, chunk in enumerate(chunks):
+                    block_text = "\n".join(chunk)  # 合并为一段（行间换行）
+                    base = line_offset[ci]
+                    for item in provider.translate_stream([block_text], source, target):
+                        if item.get("type") in ("thinking", "content"):
+                            # 增量事件带全局行号（块内所有行）
+                            yield f"data: {_json.dumps({**item, 'block': ci}, ensure_ascii=False)}\n\n"
+                        elif item.get("type") == "done":
+                            # 块完成：整块译文按行拆分回各原始行
+                            translation = item.get("translation", block_text)
+                            lines = translation.split("\n")
+                            if len(lines) < len(chunk):
+                                lines += [""] * (len(chunk) - len(lines))
+                            for j in range(len(chunk)):
+                                global_id = base + j
+                                done_payload = {
+                                    "type": "done", "id": global_id,
+                                    "translation": lines[j] if j < len(lines) else "",
+                                    "uncertain_terms": item.get("uncertain_terms", []),
+                                    "thinking": item.get("thinking"),
+                                }
+                                yield f"data: {_json.dumps(done_payload, ensure_ascii=False)}\n\n"
+                                done_lines += 1
+                                progress_payload = {
+                                    "type": "progress", "done": done_lines, "total": total,
+                                    "progress": int(done_lines / total * 100) if total else 100,
+                                }
+                                yield f"data: {_json.dumps(progress_payload, ensure_ascii=False)}\n\n"
+                yield "data: {\"type\": \"end\"}\n\n"
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
         except HTTPException:
             raise
         except ProviderError as e:

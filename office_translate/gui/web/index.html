@@ -123,6 +123,12 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
 /* ===== 空状态 ===== */
 .empty { text-align:center; color:var(--text-dim); padding:32px 0; font-size:13px; }
 
+/* ===== 流式光标 ===== */
+.caret { color: var(--accent); animation: blink 1s step-start infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+/* 思考过程块 */
+.thinking-block { background: var(--bg); border-left: 2px solid var(--warn); padding: 6px 10px; border-radius: 4px; }
+
 /* ===== toast ===== */
 #toast {
   position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
@@ -403,19 +409,37 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <span v-else class="item-meta">暂无术语库</span>
       </div>
       <button class="btn primary" @click="doTranslate" :disabled="!currentJob || translating">
-        {{ translating ? '翻译中…' : '开始 AI 翻译' }}
+        {{ translating ? '翻译中…' : '开始翻译' }}
       </button>
+      <!-- 流式进度条（按已完成行数/总行数） -->
       <div v-if="translating" class="progress-bar" style="margin-top:14px;">
         <div class="fill" :style="{width: translateProgress + '%'}"></div>
       </div>
-      <div v-if="translateResults.length" class="list" style="margin-top:16px;">
-        <div v-for="r in translateResults" :key="r.id" class="list-item">
-          <div class="item-main">
-            <div class="item-title">{{ r.translation }}</div>
-            <div class="item-meta" v-if="r.uncertain_terms.length">
-              ⚠ 不确定：{{ r.uncertain_terms.length }} 个术语
-            </div>
+      <div v-if="translating && translateTotal" class="item-meta" style="margin-top:6px;text-align:center;">
+        已翻译 {{ translateDone }} / {{ translateTotal }} 行（{{ translateProgress }}%）
+      </div>
+      <!-- 流式结果列表 -->
+      <div v-if="translating && (translateResults.length || Object.keys(translateThinking).length || Object.keys(translateBuffer).length)" class="list" style="margin-top:16px;">
+        <!-- 当前正在翻译的条目（流式） -->
+        <div v-for="(buf, id) in translateBuffer" :key="'buf' + id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
+          <div class="item-meta">#{{ id }} 翻译中…</div>
+          <div class="item-title" style="white-space:pre-wrap;">{{ buf }}<span class="caret">▋</span></div>
+          <div v-if="translateThinking[id]" class="thinking-block">
+            <div class="item-meta" style="color:var(--warn);">思考中…</div>
+            <div class="item-meta" style="white-space:pre-wrap;font-size:12px;">{{ translateThinking[id] }}</div>
           </div>
+        </div>
+        <!-- 已完成的条目 -->
+        <div v-for="r in translateResults" :key="'r' + r.id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
+          <div class="item-title" style="white-space:pre-wrap;">{{ r.translation }}</div>
+          <div class="item-meta" v-if="r.uncertain_terms.length">⚠ 不确定：{{ r.uncertain_terms.length }} 个术语</div>
+        </div>
+      </div>
+      <!-- 翻译完成后的结果 -->
+      <div v-if="!translating && translateResults.length" class="list" style="margin-top:16px;">
+        <div v-for="r in translateResults" :key="r.id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
+          <div class="item-title" style="white-space:pre-wrap;">{{ r.translation }}</div>
+          <div class="item-meta" v-if="r.uncertain_terms.length">⚠ 不确定：{{ r.uncertain_terms.length }} 个术语</div>
         </div>
       </div>
       </div><!-- /AI tab -->
@@ -511,6 +535,11 @@ createApp({
       uploadingFile: false,
       translating: false,
       translateProgress: 0,
+      translateTotal: 0,
+      translateDone: 0,
+      translateChunks: 0,
+      translateThinking: {},
+      translateBuffer: {},
       translateResults: [],
       glossaryCategories: [],
       selectedCategories: [],
@@ -887,6 +916,9 @@ createApp({
     },
     async doTranslate() {
       this.translating = true; this.translateProgress = 0; this.translateResults = [];
+      this.translateTotal = 0; this.translateDone = 0;
+      this.translateThinking = {};  // id → 思考过程文本
+      this.translateBuffer = {};    // id → 增量内容
       let texts;
       try {
         texts = await this.loadSourceTexts();
@@ -909,18 +941,82 @@ createApp({
           provider_config: this.engine === 'openai'
             ? {base_url: provider.base_url, api_key: provider.api_key, model: this.activeModel}
             : undefined,
+          model_context: (provider && provider.model_context) || this.settings.ai.model_context || null,
         };
-        const res = await this.api('/api/translate', {method: 'POST', body: JSON.stringify(body)});
-        this.translateResults = res.results;
-        this.pendingTerms = this.collectTerms(res.results);
-        this.translatedTxt = res.results.map(r => r.translation).join('\n');
+        // 流式：SSE 解析
+        const resp = await fetch('/api/translate/stream', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          throw new Error(d.detail || resp.statusText);
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, {stream: true});
+          // 按 \n\n 切分 SSE 事件
+          let idx;
+          while ((idx = buf.indexOf('\n\n')) >= 0) {
+            const event = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            if (event.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(event.slice(6));
+                this.handleStreamEvent(data);
+              } catch (e) { /* 忽略解析失败的事件 */ }
+            }
+          }
+        }
         this.translateProgress = 100;
+        // 最终结果汇总（按 id 排序，取自 done 事件记录）
+        const finalResults = [...this.translateResults].sort((a, b) => a.id - b.id);
+        this.translateResults = finalResults;
+        this.pendingTerms = this.collectTerms(finalResults);
+        this.translatedTxt = finalResults.map(r => r.translation).join('\n');
         this.toast(`翻译完成，${this.pendingTerms.length} 个不确定术语待审核`);
         this.translated = true;
         if (this.pendingTerms.length) this.step = 3;
         else this.step = 4;
       } catch (e) { this.toast('翻译失败: ' + e.message); }
       finally { this.translating = false; }
+    },
+    handleStreamEvent(data) {
+      if (data.type === 'meta') {
+        this.translateTotal = data.total;
+        this.translateChunks = data.chunks;
+      } else if (data.type === 'thinking') {
+        const id = data.id;
+        this.translateThinking[id] = (this.translateThinking[id] || '') + (data.delta || '');
+      } else if (data.type === 'content') {
+        const id = data.id;
+        this.translateBuffer[id] = (this.translateBuffer[id] || '') + (data.delta || '');
+      } else if (data.type === 'progress') {
+        // 块完成 → 后端按行推送的进度
+        this.translateDone = data.done;
+        this.translateProgress = data.progress;
+      } else if (data.type === 'done') {
+        const id = data.id;
+        this.translateDone = (this.translateDone || 0) + 1;
+        // 移除该行的缓冲（已确定）
+        delete this.translateBuffer[id];
+        // 记录结果（含不确定术语）
+        const existing = this.translateResults.find(r => r.id === id);
+        if (existing) {
+          existing.translation = data.translation;
+          existing.uncertain_terms = data.uncertain_terms || [];
+          if (data.thinking) existing.thinking = data.thinking;
+        } else {
+          this.translateResults.push({
+            id, translation: data.translation, uncertain_terms: data.uncertain_terms || [], thinking: data.thinking,
+          });
+        }
+      }
     },
     async loadSourceTexts() {
       // 读取 source.txt 的全部行作为待译文本

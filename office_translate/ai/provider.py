@@ -64,6 +64,23 @@ class Provider(abc.ABC):
                     results[i] = texts[i]  # 失败降级为原文
         return [r or "" for r in results]
 
+    def translate_stream(
+        self,
+        texts: list[str],
+        source: str,
+        target: str,
+    ) -> "typing.Iterator[dict]":
+        """流式批量翻译：逐条 yield {"id", "translation", "uncertain_terms", "thinking"}。
+
+        默认实现：串行逐条调用 translate（无 thinking）。
+        OpenAI 兼容 Provider 覆盖此方法以支持思考过程流式输出。
+        """
+        for i, text in enumerate(texts):
+            try:
+                yield {"id": i, "translation": self.translate(text, source, target), "uncertain_terms": [], "thinking": None}
+            except ProviderError:
+                yield {"id": i, "translation": text, "uncertain_terms": [{"term": text[:80], "reason": "翻译失败，保留原文", "candidate": ""}], "thinking": None}
+
 
 class OpenAICompatProvider(Provider):
     """OpenAI 兼容 API Provider。
@@ -111,6 +128,64 @@ class OpenAICompatProvider(Provider):
             return resp.choices[0].message.content or ""
         except Exception as e:
             raise ProviderError(f"OpenAI 兼容 API 调用失败: {e}") from e
+
+    def translate_stream(
+        self,
+        texts: list[str],
+        source: str,
+        target: str,
+    ):
+        """流式批量翻译：逐条 yield，含 thinking 思考过程（模型支持时）。"""
+        from .translator import _SYSTEM_TMPL
+
+        system = _SYSTEM_TMPL.format(source=source, target=target, glossary="")
+        for i, text in enumerate(texts):
+            thinking_parts: list[str] = []
+            content_parts: list[str] = []
+            try:
+                stream = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": text},
+                    ],
+                    temperature=self._temperature,
+                    stream=True,
+                )
+                for chunk in stream:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if not delta:
+                        continue
+                    # 思考过程（DeepSeek 的 reasoning_content / Anthropic 等）
+                    thinking = getattr(delta, "reasoning_content", None)
+                    if thinking:
+                        thinking_parts.append(thinking)
+                        # 思考过程也流式 yield，前端实时显示
+                        yield {"id": i, "type": "thinking", "delta": thinking}
+                    if delta.content:
+                        content_parts.append(delta.content)
+                        yield {"id": i, "type": "content", "delta": delta.content}
+                content = "".join(content_parts)
+                # 解析不确定术语
+                from .translator import _parse_result
+
+                parsed = _parse_result(content)
+                yield {
+                    "id": i,
+                    "type": "done",
+                    "translation": parsed["translation"],
+                    "uncertain_terms": parsed["uncertain_terms"],
+                    "thinking": "".join(thinking_parts),
+                }
+            except Exception as e:
+                yield {
+                    "id": i,
+                    "type": "done",
+                    "translation": text,
+                    "uncertain_terms": [{"term": text[:80], "reason": "翻译失败，保留原文", "candidate": ""}],
+                    "thinking": "".join(thinking_parts),
+                    "error": str(e),
+                }
 
 
 class MirrorPool:
@@ -230,3 +305,23 @@ class GoogleProvider(Provider):
 
     def translate(self, text: str, source: str, target: str) -> str:
         return self._pool.execute(self._translate_one, text, source, target)
+
+    def translate_stream(
+        self,
+        texts: list[str],
+        source: str,
+        target: str,
+    ):
+        """流式批量翻译（Google 无思考过程，逐条 yield 结果）。"""
+        for i, text in enumerate(texts):
+            try:
+                translation = self.translate(text, source, target)
+                yield {"id": i, "type": "done", "translation": translation, "uncertain_terms": [], "thinking": None}
+            except ProviderError:
+                yield {
+                    "id": i,
+                    "type": "done",
+                    "translation": text,
+                    "uncertain_terms": [{"term": text[:80], "reason": "翻译失败，保留原文", "candidate": ""}],
+                    "thinking": None,
+                }
