@@ -113,7 +113,7 @@ class OpenAICompatProvider(Provider):
         glossary: str = "",
     ) -> str:
         """带术语库的 chat 调用，返回模型原始输出（含 JSON）。"""
-        from .translator import _SYSTEM_TMPL
+        from .translator import TRANSLATION_SCHEMA, _SYSTEM_TMPL
 
         system = _SYSTEM_TMPL.format(source=source, target=target, glossary=glossary)
         try:
@@ -124,6 +124,14 @@ class OpenAICompatProvider(Provider):
                     {"role": "user", "content": text},
                 ],
                 temperature=self._temperature,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "translation_result",
+                        "schema": TRANSLATION_SCHEMA,
+                        "strict": True,
+                    },
+                },
             )
             return resp.choices[0].message.content or ""
         except Exception as e:
@@ -136,7 +144,7 @@ class OpenAICompatProvider(Provider):
         target: str,
     ):
         """流式批量翻译：逐条 yield，含 thinking 思考过程（模型支持时）。"""
-        from .translator import _SYSTEM_TMPL
+        from .translator import TRANSLATION_SCHEMA, _SYSTEM_TMPL
 
         system = _SYSTEM_TMPL.format(source=source, target=target, glossary="")
         for i, text in enumerate(texts):
@@ -151,6 +159,14 @@ class OpenAICompatProvider(Provider):
                     ],
                     temperature=self._temperature,
                     stream=True,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "translation_result",
+                            "schema": TRANSLATION_SCHEMA,
+                            "strict": True,
+                        },
+                    },
                 )
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None

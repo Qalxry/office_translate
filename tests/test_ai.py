@@ -102,6 +102,18 @@ def test_parse_result_valid():
     assert parsed["uncertain_terms"][0]["term"] == "PPB"
 
 
+def test_schema_shape():
+    """json_schema 输出（含不确定术语嵌套数组）应能被解析。"""
+    from office_translate.ai.translator import TRANSLATION_SCHEMA, _parse_result
+    # schema 本身合法
+    assert TRANSLATION_SCHEMA["required"] == ["translation", "uncertain_terms"]
+    # 模型按 schema 输出
+    content = '{"translation": "供应商质量评估", "uncertain_terms": [{"term": "PPB", "reason": "缩写", "candidate": "十亿分之几"}]}'
+    parsed = _parse_result(content)
+    assert parsed["translation"] == "供应商质量评估"
+    assert parsed["uncertain_terms"][0]["term"] == "PPB"
+
+
 def test_parse_result_no_json_fallback():
     parsed = _parse_result("直接输出的译文")
     assert parsed["translation"] == "直接输出的译文"

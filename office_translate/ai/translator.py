@@ -18,16 +18,35 @@ from .provider import OpenAICompatProvider, Provider, ProviderError
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 _JSON_OBJ = re.compile(r"\{.*\}", re.DOTALL)
 
+# 不确定术语的 JSON Schema（用于 response_format 约束模型输出）
+TRANSLATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "translation": {"type": "string", "description": "翻译后的文本"},
+        "uncertain_terms": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string", "description": "不确定的术语原文"},
+                    "reason": {"type": "string", "description": "不确定原因"},
+                    "candidate": {"type": "string", "description": "候选译法"},
+                },
+                "required": ["term", "reason", "candidate"],
+            },
+        },
+    },
+    "required": ["translation", "uncertain_terms"],
+}
+
 _SYSTEM_TMPL = (
     "You are a professional translation engine. Translate the following text "
     "from {source} to {target}.\n"
     "{glossary}"
     "\n"
     "Rules:\n"
-    "- Output ONLY a valid JSON object, no explanations:\n"
-    '  {{"translation": "<译文>", "uncertain_terms": '
-    '[{{"term": "<不确定的术语原文>", "reason": "<不确定原因>", "candidate": "<候选译法>"}}]}}\n'
-    "- translation is the translated text.\n"
+    "- Output MUST be a valid JSON object matching the provided schema.\n"
+    "- translation: the translated text.\n"
     "- uncertain_terms: list terms you are NOT confident about "
     "(proper nouns, abbreviations, ambiguous words). Empty list if fully confident.\n"
     "- Keep the original structure, line breaks, and formatting."

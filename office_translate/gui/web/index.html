@@ -90,6 +90,10 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
 .btn:disabled { opacity:.5; cursor:not-allowed; }
 .btn.sm { padding:4px 10px; font-size:12px; }
 
+/* ===== 提示说明 ===== */
+.hint { font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+.hint.warn { color: var(--warn); }
+
 /* ===== 列表 ===== */
 .list { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
 .list-item { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border); }
@@ -123,6 +127,12 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
 /* ===== 空状态 ===== */
 .empty { text-align:center; color:var(--text-dim); padding:32px 0; font-size:13px; }
 
+/* ===== 滚动区域（翻译中长列表） ===== */
+.scroll-area { max-height: 420px; overflow-y: auto; }
+.scroll-area::-webkit-scrollbar { width: 8px; }
+.scroll-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.scroll-area::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
 /* ===== 流式光标 ===== */
 .caret { color: var(--accent); animation: blink 1s step-start infinite; }
 @keyframes blink { 50% { opacity: 0; } }
@@ -155,6 +165,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
     <div v-if="view === 'glossary'" class="card">
       <h3>术语库管理</h3>
       <p class="desc">按类别浏览、编辑、删除、新增术语。审核时接受的术语也会自动沉淀到这里。</p>
+      <p class="hint" style="margin-bottom:10px;">术语按类别组织（如「汽车行业」「软件」），翻译时勾选使用的类别。<br>只有「确实出现在本次文本中」的术语才会注入给 AI，保证采用你的译法。</p>
       <div class="row inline">
         <div>
           <label>类别</label>
@@ -208,6 +219,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div class="row">
         <label>AI 供应商（OpenAI 兼容）</label>
         <p class="desc" style="margin-bottom:8px;">配置 API 端点、密钥与模型。翻译时在此选择供应商。</p>
+        <p class="hint" style="margin-bottom:8px;">预置 OpenAI / DeepSeek / Claude / Ollama。填入对应服务商的 Base URL 与 API Key 即可使用；「模型」每行一个，分块翻译按模型上下文自动调整。</p>
         <div class="list">
           <div v-for="(p, key) in settings.ai.providers" :key="key" class="list-item" style="flex-direction:column;align-items:stretch;gap:8px;">
             <div style="display:flex;align-items:center;gap:8px;">
@@ -242,14 +254,17 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <div>
           <label>源语言</label>
           <input v-model="settings.ai.source_lang" @change="saveSettings" style="width:100%;">
+          <p class="hint">文档原文的语言（BCP-47，如 en / ja）。</p>
         </div>
         <div>
           <label>目标语言</label>
           <input v-model="settings.ai.target_lang" @change="saveSettings" style="width:100%;">
+          <p class="hint">要翻译成什么语言（如 zh-CN）。</p>
         </div>
         <div>
           <label>并发数</label>
           <input v-model.number="settings.ai.concurrency" type="number" min="1" max="16" @change="saveSettings" style="width:100%;">
+          <p class="hint">同时翻译几个块。太高可能被限流，建议 2-4。</p>
         </div>
       </div>
 
@@ -257,6 +272,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div class="row" style="margin-top:12px;">
         <label>Google 镜像站（失败自动切换，按顺序尝试）</label>
         <textarea v-model="mirrorsText" rows="4" style="font-family:monospace;"></textarea>
+        <p class="hint">每行一个镜像站。翻译时按顺序尝试，失败的自动切换到下一个（连续失败进入冷却）。</p>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn primary" @click="saveMirrors">保存镜像站</button>
@@ -292,19 +308,22 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div class="row">
         <label>输入文件路径</label>
         <div class="inline">
-          <input v-model="newJobInput" placeholder="/path/to/file.xlsx（.xls 会自动转换）">
+          <input v-model="newJobInput" placeholder="/path/to/file.xlsx">
           <button class="btn" style="flex:0 0 auto;" @click="$refs.fileInput.click()" :disabled="uploadingFile">{{ uploadingFile ? '上传中…' : '浏览文件…' }}</button>
           <input type="file" ref="fileInput" style="display:none;" @change="onFileSelected">
         </div>
+        <p class="hint">选择要翻译的文档。支持 .xlsx（Excel）；.xls 会自动转换。文件会被复制进工作区，原文件不受影响。</p>
       </div>
       <div class="row">
-        <label>任务名（可选，缺省按时间戳自动生成）</label>
+        <label>任务名（可选）</label>
         <input v-model="newJobName" placeholder="如 eval_2024">
+        <p class="hint">每个翻译任务一个独立文件夹。留空则按时间戳自动命名（如 20260810_143000）。</p>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn primary" @click="createJob" :disabled="!newJobInput">新建任务</button>
         <button class="btn" @click="refreshJobs">刷新</button>
       </div>
+      <div class="hint" style="margin-top:12px;">已建任务会显示进度与下载入口，点「继续」从上次的位置接着做。</div>
       <div v-if="jobs.length" class="list" style="margin-top:16px;">
         <div v-for="j in jobs" :key="j.job" class="list-item" :class="{selected: currentJob === j.job}" style="cursor:pointer;flex-wrap:wrap;gap:8px;">
           <div class="item-main" @click="selectJob(j)" style="min-width:180px;">
@@ -333,6 +352,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <button class="btn primary" @click="doExtract" :disabled="!currentJob || extracting">
         {{ extracting ? '提取中…' : '开始提取' }}
       </button>
+      <p class="hint">提取会扫描文档中的可翻译文本（跳过数值、公式、日期）。<br>重复文本只导出一次，回填时同步到所有出现位置。</p>
       <div v-if="extractInfo" class="list" style="margin-top:16px;">
         <div class="list-item"><span class="item-title">工作表</span><span class="item-meta">{{ extractInfo.sheets.join(', ') }}</span></div>
         <div class="list-item"><span class="item-title">可翻译单元格</span><span class="item-meta">{{ extractInfo.cells_translatable }}</span></div>
@@ -357,7 +377,8 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <button class="btn sm" :class="{primary: translateMode === 'manual'}" @click="translateMode = 'manual'">手动翻译</button>
       </div>
       <div v-if="translateMode === 'manual'">
-        <p class="desc">逐条编辑译文（与原文一一对应），编辑会实时同步到下方文本框。可先「预览翻译映射结果」加载已有译文。</p>
+        <p class="desc">逐条编辑译文（与原文一一对应），编辑会实时同步到下方文本框。</p>
+        <p class="hint" style="margin-bottom:10px;">「预览翻译映射结果」会加载已保存的译文（如有），并按行展示原文↔译文对照。<br>所有条目标记后点「保存并进入下一步」；行数必须与原文一致（会自动校验）。</p>
         <!-- 映射列表（每条可单独编辑） -->
         <div v-if="manualMappings.length" class="list" style="margin-bottom:12px;">
           <div v-for="(m, i) in manualMappings" :key="i" style="padding:10px 14px;border-bottom:1px solid var(--border);">
@@ -385,18 +406,21 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
             <option value="google">Google（镜像站）</option>
             <option value="openai">OpenAI 兼容（供应商）</option>
           </select>
+          <p class="hint">Google 免费但无思考过程；OpenAI 兼容（DeepSeek/Claude 等）可显示思考过程并自报不确定术语。</p>
         </div>
         <div v-if="engine === 'openai'">
           <label>供应商</label>
           <select v-model="activeProviderKey" @change="onProviderChange">
             <option v-for="(p, key) in settings.ai.providers" :key="key" :value="key">{{ p.name }}</option>
           </select>
+          <p class="hint">在「设置」页管理供应商（Base URL / API Key / 模型）。</p>
         </div>
         <div v-if="engine === 'openai'">
           <label>模型</label>
           <select v-model="activeModel">
             <option v-for="m in activeProviderModels" :key="m" :value="m">{{ m }}</option>
           </select>
+          <p class="hint">DeepSeek 用 deepseek-reasoner 可看到思考过程。</p>
         </div>
       </div>
       <div class="row">
@@ -407,10 +431,12 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
           </label>
         </div>
         <span v-else class="item-meta">暂无术语库</span>
+        <p class="hint">只把「出现在本次文本中」的术语注入给 AI，保证采用你的译法。术语在「审核」步骤沉淀，可在「术语库」页管理。</p>
       </div>
       <button class="btn primary" @click="doTranslate" :disabled="!currentJob || translating">
         {{ translating ? '翻译中…' : '开始翻译' }}
       </button>
+      <p class="hint">翻译过程实时显示：进度条按行更新，译文逐条出现；有思考能力的模型会显示思考过程。可随时在下方看到已完成的译文。</p>
       <!-- 流式进度条（按已完成行数/总行数） -->
       <div v-if="translating" class="progress-bar" style="margin-top:14px;">
         <div class="fill" :style="{width: translateProgress + '%'}"></div>
@@ -418,8 +444,8 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div v-if="translating && translateTotal" class="item-meta" style="margin-top:6px;text-align:center;">
         已翻译 {{ translateDone }} / {{ translateTotal }} 行（{{ translateProgress }}%）
       </div>
-      <!-- 流式结果列表 -->
-      <div v-if="translating && (translateResults.length || Object.keys(translateThinking).length || Object.keys(translateBuffer).length)" class="list" style="margin-top:16px;">
+      <!-- 流式结果列表（可滚动） -->
+      <div v-if="translating && (translateResults.length || Object.keys(translateThinking).length || Object.keys(translateBuffer).length)" class="list scroll-area" style="margin-top:16px;">
         <!-- 当前正在翻译的条目（流式） -->
         <div v-for="(buf, id) in translateBuffer" :key="'buf' + id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
           <div class="item-meta">#{{ id }} 翻译中…</div>
@@ -448,7 +474,8 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
     <!-- 步骤 4：审核 -->
     <div v-if="step === 3" class="card">
       <h3>审核不确定术语</h3>
-      <p class="desc">模型认为把握不足的术语会列出，接受则沉淀入术语库（选类别），可修改或忽略。</p>
+      <p class="desc">模型认为把握不足的术语会列出（如专有名词、缩写、多义词），由你确认。</p>
+      <p class="hint" style="margin-bottom:10px;">「接受并入库」把该术语存入所选类别的术语库，下次翻译会自动采用；「忽略」仅本次不处理。<br>全部处理完会自动进入下一步。</p>
       <div v-if="pendingTerms.length">
         <div v-for="(t, i) in pendingTerms" :key="i" class="term-card">
           <div class="term-src">{{ t.term }}</div>
@@ -486,6 +513,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
     <div v-if="step === 4" class="card">
       <h3>导出</h3>
       <p class="desc">确认译文后生成「仅译文」与「原文-译文对照」两份文件，样式完全保留，可直接下载。</p>
+      <p class="hint" style="margin-bottom:10px;">译文文本可在此直接编辑（AI 翻译或手动翻译的结果会自动填入）。<br>生成后文件会出现在任务区，随时可再次下载。</p>
       <div class="row">
         <label>译文文本（可直接编辑）</label>
         <textarea v-model="translatedTxt" rows="10" style="font-family:monospace;"></textarea>
