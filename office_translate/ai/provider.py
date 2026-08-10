@@ -37,9 +37,32 @@ class Provider(abc.ABC):
     def translate(self, text: str, source: str, target: str) -> str:
         """翻译单条文本，返回译文。失败抛 ProviderError。"""
 
-    def translate_batch(self, texts: list[str], source: str, target: str) -> list[str]:
-        """批量翻译，返回与输入等长的译文列表。"""
-        return [self.translate(t, source, target) for t in texts]
+    def translate_batch(
+        self,
+        texts: list[str],
+        source: str,
+        target: str,
+        concurrency: int = 1,
+    ) -> list[str]:
+        """批量翻译，返回与输入等长的译文列表。
+
+        Args:
+            concurrency: 并发线程数（>1 时并发翻译，失败的单条降级为原文）。
+        """
+        if concurrency <= 1:
+            return [self.translate(t, source, target) for t in texts]
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: list[Optional[str]] = [None] * len(texts)
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(self.translate, texts[i], source, target): i for i in range(len(texts))}
+            for fut in as_completed(futures):
+                i = futures[fut]
+                try:
+                    results[i] = fut.result()
+                except ProviderError:
+                    results[i] = texts[i]  # 失败降级为原文
+        return [r or "" for r in results]
 
 
 class OpenAICompatProvider(Provider):

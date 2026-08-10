@@ -124,6 +124,34 @@ def test_translate_batch_fake_provider():
     assert all(r["uncertain_terms"] == [] for r in results)
 
 
+def test_translate_batch_concurrency():
+    import threading
+    import time
+    from office_translate.ai.provider import Provider
+
+    active = 0
+    peak = 0
+    lock = threading.Lock()
+
+    class Slow(Provider):
+        name = "slow"
+
+        def translate(self, text, source, target):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.05)
+            with lock:
+                active -= 1
+            return f"译:{text}"
+
+    results = Slow().translate_batch([f"t{i}" for i in range(6)], "en", "zh-CN", concurrency=3)
+    assert len(results) == 6
+    assert peak >= 2  # 确实并发过
+    assert results[0] == "译:t0"
+
+
 def test_translate_batch_failure_degrades():
     class Failing:
         def translate(self, text, source, target):

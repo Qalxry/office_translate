@@ -173,7 +173,10 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         </div>
       </div>
       <div v-for="cat in filteredGlossary" :key="cat.name" style="margin-top:16px;">
-        <div class="item-title" style="margin-bottom:8px;">{{ cat.name }} <span class="tag blue">{{ cat.entries.length }}</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div class="item-title">{{ cat.name }} <span class="tag blue">{{ cat.entries.length }}</span></div>
+          <button class="btn sm danger" style="margin-left:auto;" @click="deleteCategory(cat.name)">删除类别</button>
+        </div>
         <div class="list">
           <div v-for="e in cat.entries" :key="e.source" class="list-item">
             <div class="item-main">
@@ -194,7 +197,58 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
     <!-- 设置视图 -->
     <div v-if="view === 'settings'" class="card">
       <h3>设置</h3>
+
+      <!-- 供应商管理 -->
       <div class="row">
+        <label>AI 供应商（OpenAI 兼容）</label>
+        <p class="desc" style="margin-bottom:8px;">配置 API 端点、密钥与模型。翻译时在此选择供应商。</p>
+        <div class="list">
+          <div v-for="(p, key) in settings.ai.providers" :key="key" class="list-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <strong>{{ p.name }}</strong>
+              <span class="tag" :class="key === settings.ai.active_provider ? 'green' : 'blue'">{{ key === settings.ai.active_provider ? '使用中' : key }}</span>
+              <span style="margin-left:auto;display:flex;gap:4px;">
+                <button class="btn sm" @click="setActiveProvider(key)">设为使用</button>
+                <button class="btn sm danger" @click="removeProvider(key)">删除</button>
+              </span>
+            </div>
+            <div class="row" style="margin-bottom:6px;">
+              <label>Base URL</label>
+              <input :value="p.base_url" @change="updateProvider(key, 'base_url', $event.target.value)" style="font-family:monospace;">
+            </div>
+            <div class="row" style="margin-bottom:6px;">
+              <label>API Key</label>
+              <input :value="p.api_key" type="password" @change="updateProvider(key, 'api_key', $event.target.value)" placeholder="sk-...">
+            </div>
+            <div class="row" style="margin-bottom:0;">
+              <label>模型（每行一个）</label>
+              <textarea :value="p.models.join('\n')" rows="2" @change="updateProviderModels(key, $event.target.value)" style="font-family:monospace;min-height:40px;"></textarea>
+            </div>
+          </div>
+          <div class="list-item" style="justify-content:center;">
+            <button class="btn sm primary" @click="addProvider">＋ 新增供应商</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 语言与并发 -->
+      <div class="row inline">
+        <div>
+          <label>源语言</label>
+          <input v-model="settings.ai.source_lang" @change="saveSettings" style="width:100%;">
+        </div>
+        <div>
+          <label>目标语言</label>
+          <input v-model="settings.ai.target_lang" @change="saveSettings" style="width:100%;">
+        </div>
+        <div>
+          <label>并发数</label>
+          <input v-model.number="settings.ai.concurrency" type="number" min="1" max="16" @change="saveSettings" style="width:100%;">
+        </div>
+      </div>
+
+      <!-- 镜像站 -->
+      <div class="row" style="margin-top:12px;">
         <label>Google 镜像站（失败自动切换，按顺序尝试）</label>
         <textarea v-model="mirrorsText" rows="4" style="font-family:monospace;"></textarea>
       </div>
@@ -231,7 +285,10 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <p class="desc">每个翻译任务对应一个工作目录，原始文档会被复制进工作区。</p>
       <div class="row">
         <label>输入文件路径</label>
-        <input v-model="newJobInput" placeholder="/path/to/file.xlsx（.xls 会自动转换）">
+        <div class="inline">
+          <input v-model="newJobInput" placeholder="/path/to/file.xlsx（.xls 会自动转换）">
+          <button class="btn" style="flex:0 0 auto;" @click="pickFile" :disabled="pickingFile">{{ pickingFile ? '打开中…' : '浏览文件…' }}</button>
+        </div>
       </div>
       <div class="row">
         <label>任务名（可选，缺省按时间戳自动生成）</label>
@@ -274,22 +331,22 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div class="row inline">
         <div>
           <label>引擎</label>
-          <select v-model="engine">
+          <select v-model="engine" @change="onEngineChange">
             <option value="google">Google（镜像站）</option>
-            <option value="openai">OpenAI 兼容</option>
+            <option value="openai">OpenAI 兼容（供应商）</option>
           </select>
         </div>
         <div v-if="engine === 'openai'">
-          <label>Base URL</label>
-          <input v-model="openaiBaseUrl" placeholder="https://api.openai.com/v1">
-        </div>
-        <div v-if="engine === 'openai'">
-          <label>API Key</label>
-          <input v-model="openaiApiKey" type="password" placeholder="sk-...">
+          <label>供应商</label>
+          <select v-model="activeProviderKey" @change="onProviderChange">
+            <option v-for="(p, key) in settings.ai.providers" :key="key" :value="key">{{ p.name }}</option>
+          </select>
         </div>
         <div v-if="engine === 'openai'">
           <label>模型</label>
-          <input v-model="openaiModel" placeholder="gpt-4o-mini">
+          <select v-model="activeModel">
+            <option v-for="m in activeProviderModels" :key="m" :value="m">{{ m }}</option>
+          </select>
         </div>
       </div>
       <div class="row">
@@ -394,9 +451,9 @@ createApp({
       extracting: false,
       extractInfo: null,
       engine: 'google',
-      openaiBaseUrl: 'https://api.openai.com/v1',
-      openaiApiKey: '',
-      openaiModel: 'gpt-4o-mini',
+      activeProviderKey: 'openai',
+      activeModel: 'gpt-4o-mini',
+      pickingFile: false,
       translating: false,
       translateProgress: 0,
       translateResults: [],
@@ -415,6 +472,7 @@ createApp({
       newTerm: {category: '', source: '', target: '', note: ''},
       glossaryDetail: {},
       // 设置
+      settings: {ai: {engine: 'google', providers: {}, active_provider: 'openai', mirrors: [], source_lang: 'en', target_lang: 'zh-CN', concurrency: 4}},
       mirrorsText: '',
       customMirrors: null,
       testingMirrors: false,
@@ -427,7 +485,11 @@ createApp({
       const names = Object.keys(cats).sort();
       const filtered = this.glossaryCategoryFilter ? [this.glossaryCategoryFilter] : names;
       return filtered.filter(n => cats[n]).map(name => ({name, entries: cats[name]}));
-    }
+    },
+    activeProviderModels() {
+      const p = this.settings.ai.providers[this.activeProviderKey];
+      return (p && p.models && p.models.length) ? p.models : ['gpt-4o-mini'];
+    },
   },
   methods: {
     toast(msg) {
@@ -501,17 +563,103 @@ createApp({
         this.toast('已删除');
       } catch (e) { this.toast('删除失败: ' + e.message); }
     },
+    async pickFile() {
+      this.pickingFile = true;
+      try {
+        const r = await this.api('/api/pick_file', {method: 'POST'});
+        this.newJobInput = r.path;
+      } catch (e) { this.toast('无法打开文件选择器: ' + e.message); }
+      finally { this.pickingFile = false; }
+    },
+    async loadSettings() {
+      try {
+        this.settings = await this.api('/api/settings');
+        this.mirrorsText = (this.settings.ai.mirrors || []).join('\n');
+        this.activeProviderKey = this.settings.ai.active_provider || 'openai';
+        this.engine = this.settings.ai.engine || 'google';
+        const p = this.settings.ai.providers[this.activeProviderKey];
+        if (p && p.models && p.models.length) this.activeModel = p.models[0];
+      } catch (e) { this.toast('加载设置失败'); }
+    },
+    async saveSettings() {
+      try {
+        this.settings = await this.api('/api/settings', {
+          method: 'PUT',
+          body: JSON.stringify(this.settings),
+        });
+      } catch (e) { this.toast('保存设置失败: ' + e.message); }
+    },
+    async updateProvider(key, field, value) {
+      const p = this.settings.ai.providers[key];
+      if (!p) return;
+      p[field] = value;
+      await this.saveSettings();
+    },
+    async updateProviderModels(key, text) {
+      const p = this.settings.ai.providers[key];
+      if (!p) return;
+      p.models = text.split('\n').map(s => s.trim()).filter(Boolean);
+      await this.saveSettings();
+    },
+    async setActiveProvider(key) {
+      this.settings.ai.active_provider = key;
+      this.activeProviderKey = key;
+      const p = this.settings.ai.providers[key];
+      if (p && p.models && p.models.length) this.activeModel = p.models[0];
+      await this.saveSettings();
+    },
+    async addProvider() {
+      const name = prompt('供应商名称:', '新供应商');
+      if (!name) return;
+      const key = 'custom' + Date.now();
+      this.settings.ai.providers[key] = {
+        name, base_url: 'https://api.openai.com/v1', api_key: '',
+        models: ['gpt-4o-mini'], default_model: 'gpt-4o-mini',
+      };
+      await this.saveSettings();
+    },
+    async removeProvider(key) {
+      if (Object.keys(this.settings.ai.providers).length <= 1) {
+        this.toast('至少保留一个供应商');
+        return;
+      }
+      if (!confirm(`删除供应商「${this.settings.ai.providers[key].name}」？`)) return;
+      delete this.settings.ai.providers[key];
+      if (this.activeProviderKey === key) {
+        this.activeProviderKey = Object.keys(this.settings.ai.providers)[0];
+      }
+      await this.saveSettings();
+    },
+    onEngineChange() {
+      this.settings.ai.engine = this.engine;
+      this.saveSettings();
+    },
+    onProviderChange() {
+      const p = this.settings.ai.providers[this.activeProviderKey];
+      if (p && p.models && p.models.length) this.activeModel = p.models[0];
+    },
+    async deleteCategory(name) {
+      if (!confirm(`删除整个类别「${name}」及其 ${this.glossaryDetail.categories[name] ? this.glossaryDetail.categories[name].length : 0} 个术语？`)) return;
+      try {
+        await this.api(`/api/glossary/categories?category=${encodeURIComponent(name)}`, {method: 'DELETE'});
+        await this.loadGlossaryDetail();
+        await this.loadGlossary();
+        this.toast('类别已删除');
+      } catch (e) { this.toast('删除失败: ' + e.message); }
+    },
     async loadMirrors() {
       try {
         const r = await this.api('/api/mirrors');
         this.mirrorsText = r.mirrors.join('\n');
       } catch (e) { this.toast('加载镜像站失败'); }
     },
-    saveMirrors() {
+    async saveMirrors() {
       const lines = this.mirrorsText.split('\n').map(s => s.trim()).filter(Boolean);
       if (!lines.length) { this.toast('镜像站列表不能为空'); return; }
+      this.settings.ai.mirrors = lines;
       this.customMirrors = lines;
-      this.toast('镜像站已保存（本次会话生效）');
+      await this.saveSettings();
+      this.toast('镜像站已保存');
     },
     async testMirrors() {
       this.testingMirrors = true;
@@ -562,12 +710,17 @@ createApp({
       }
       if (!texts.length) { this.translating = false; this.toast('没有可翻译文本'); return; }
       try {
+        const provider = this.settings.ai.providers[this.activeProviderKey] || {};
         const body = {
-          texts, source: 'en', target: 'zh-CN', engine: this.engine,
+          texts,
+          source: this.settings.ai.source_lang || 'en',
+          target: this.settings.ai.target_lang || 'zh-CN',
+          engine: this.engine,
           glossary_categories: this.selectedCategories,
-          mirrors: this.customMirrors || null,
+          concurrency: this.settings.ai.concurrency || 4,
+          mirrors: this.customMirrors || this.settings.ai.mirrors || null,
           provider_config: this.engine === 'openai'
-            ? {base_url: this.openaiBaseUrl, api_key: this.openaiApiKey, model: this.openaiModel}
+            ? {base_url: provider.base_url, api_key: provider.api_key, model: this.activeModel}
             : undefined,
         };
         const res = await this.api('/api/translate', {method: 'POST', body: JSON.stringify(body)});
@@ -635,6 +788,7 @@ createApp({
   },
   mounted() {
     this.refreshJobs();
+    this.loadSettings();
     this.loadMirrors();
   },
 }).mount('#app');

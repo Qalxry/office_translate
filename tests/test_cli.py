@@ -106,6 +106,39 @@ def test_config_missing_uses_defaults(tmp_path):
     assert main(["-c", str(tmp_path / "nonexistent.yaml"), "list"]) == 0
 
 
+def test_auto_translate_google(project, monkeypatch):
+    # mock GoogleProvider，避免真请求
+    from office_translate.ai import provider as provider_mod
+
+    class FakeGoogle:
+        name = "google"
+
+        def __init__(self, mirrors):
+            pass
+
+        def translate_batch(self, texts, source, target, concurrency=1):
+            return [f"译:{t}" for t in texts]
+
+    monkeypatch.setattr(provider_mod, "GoogleProvider", FakeGoogle)
+
+    root = project
+    cfg = str(root / "config.yaml")
+    sample = str(root / "input" / "sample.xlsx")
+    assert main(["-c", cfg, "init", "jobauto", "-i", sample]) == 0
+
+    # 一键翻译
+    assert main(["-c", cfg, "auto", "jobauto"]) == 0
+
+    job_dir = root / "work" / "jobauto"
+    assert (job_dir / "source.txt").is_file()
+    assert (job_dir / "translated.txt").is_file()
+    assert (job_dir / "output" / "jobauto_translated.xlsx").is_file()
+
+    # 校验译文
+    wb = openpyxl.load_workbook(job_dir / "output" / "jobauto_translated.xlsx")
+    assert wb.active["A1"].value == "译:Hello"
+
+
 def test_init_auto_job_suffix_on_collision(project, monkeypatch):
     # 时间戳重名时自动追加 _1 后缀
     import re

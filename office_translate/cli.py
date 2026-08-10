@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from datetime import datetime
@@ -150,6 +151,97 @@ def _cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_ai_settings(config_path: str) -> dict:
+    """读取 GUI 设置（gui_settings.json）里的 AI 配置；文件不存在时用默认值。"""
+    base = os.path.dirname(os.path.abspath(config_path)) if os.path.isfile(config_path) else os.getcwd()
+    path = os.path.join(base, "gui_settings.json")
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and isinstance(data.get("ai"), dict):
+                return data["ai"]
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _cmd_auto(args: argparse.Namespace) -> int:
+    """一键翻译：extract → AI 翻译 → apply，全部自动完成。"""
+    from .ai.provider import GoogleProvider, OpenAICompatProvider, ProviderError
+    from .gui.server import DEFAULT_MIRRORS
+
+    cfg = load_config(args.config)
+    info = config_mod.load_job(cfg, args.job)
+
+    # 1) extract（若尚未提取）
+    if not os.path.isfile(info["source_txt"]):
+        adapter = get_adapter(os.path.splitext(info["input"])[1])()
+        adapter.extract(info["input"], info["source_txt"], info["map_json"])
+        print(f"[1/3] 提取完成: {info['source_txt']}")
+    else:
+        print(f"[1/3] 已存在提取结果，跳过")
+
+    # 2) AI 翻译
+    with open(info["source_txt"], "r", encoding="utf-8", newline="") as f:
+        texts = [line.rstrip("\n") for line in f if line.strip()]
+    if not texts:
+        print("错误: 没有可翻译文本")
+        return 1
+
+    ai_cfg = _load_ai_settings(args.config)
+    engine = args.engine or ai_cfg.get("engine", "google")
+    source = args.source or ai_cfg.get("source_lang", "en")
+    target = args.target or ai_cfg.get("target_lang", "zh-CN")
+
+    print(f"[2/3] 开始 AI 翻译（{engine}，{len(texts)} 条，{source}→{target}）...")
+    try:
+        if engine == "google":
+            mirrors = args.mirrors or ai_cfg.get("mirrors") or []
+            provider = GoogleProvider(mirrors or DEFAULT_MIRRORS)
+            concurrency = ai_cfg.get("concurrency", 4)
+            translations = provider.translate_batch(texts, source, target, concurrency=concurrency)
+            translations_out = translations
+        elif engine == "openai":
+            provider_cfg = ai_cfg.get("providers", {}).get(ai_cfg.get("active_provider", "openai"), {})
+            provider = OpenAICompatProvider(
+                base_url=args.base_url or provider_cfg.get("base_url", "https://api.openai.com/v1"),
+                api_key=args.api_key or provider_cfg.get("api_key", ""),
+                model=args.model or provider_cfg.get("default_model", "gpt-4o-mini"),
+            )
+            from .ai.translator import translate_batch as _tb
+
+            results = _tb(texts, provider, source, target)
+            translations_out = [r["translation"] for r in results]
+        else:
+            print(f"错误: 未知引擎 {engine!r}（可选 google / openai）")
+            return 1
+    except ProviderError as e:
+        print(f"错误: 翻译失败: {e}")
+        return 1
+
+    # 写回 translated.txt（一行一条，保持行序）
+    with open(info["translated_txt"], "w", encoding="utf-8", newline="") as f:
+        for t in translations_out:
+            f.write(t.rstrip("\n"))
+            f.write("\n")
+    print(f"[2/3] 翻译完成，已写入 {info['translated_txt']}")
+
+    # 3) apply
+    os.makedirs(info["output_dir"], exist_ok=True)
+    adapter = get_adapter(os.path.splitext(info["input"])[1])()
+    result = adapter.apply(
+        original=info["input"],
+        json_path=info["map_json"],
+        translated_txt=info["translated_txt"],
+        output_translated=info["output_translated"],
+        output_bilingual=info["output_bilingual"],
+        sep=info["sep"],
+    )
+    print(f"[3/3] 回填完成: {result['translated_output']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="office-translate",
@@ -191,7 +283,30 @@ def build_parser() -> argparse.ArgumentParser:
     pl = sub.add_parser("list", help="列出工作区任务及进度")
     pl.set_defaults(func=_cmd_list)
 
+    pauto = sub.add_parser("auto", help="一键翻译：提取 + AI 翻译 + 回填一条命令跑完")
+    pauto.add_argument("job", help="任务名")
+    pauto.add_argument("--engine", default=None, help="翻译引擎: google / openai（默认读设置）")
+    pauto.add_argument("--source", default=None, help="源语言（默认 en）")
+    pauto.add_argument("--target", default=None, help="目标语言（默认 zh-CN）")
+    pauto.add_argument("--base-url", dest="base_url", default=None, help="OpenAI 兼容端点（覆盖设置）")
+    pauto.add_argument("--api-key", dest="api_key", default=None, help="API 密钥（覆盖设置）")
+    pauto.add_argument("--model", default=None, help="模型名（覆盖设置）")
+    pauto.add_argument("--mirrors", default=None, help="Google 镜像站（逗号分隔，覆盖设置）")
+    pauto.set_defaults(func=_cmd_auto)
+
+    pg = sub.add_parser("gui", help="启动图形界面（本地 Web 服务 + 浏览器/WebView）")
+    pg.add_argument("--port", type=int, default=None, help="端口（默认自动选）")
+    pg.add_argument("--no-webview", action="store_true", help="强制用浏览器而非 pywebview")
+    pg.set_defaults(func=_cmd_gui)
+
     return p
+
+
+def _cmd_gui(args: argparse.Namespace) -> int:
+    from .gui.launcher import launch
+
+    launch(config_path=args.config, port=args.port, use_webview=not args.no_webview)
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

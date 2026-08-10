@@ -89,8 +89,8 @@ def test_translate_google_mocked(client, monkeypatch):
         def __init__(self, mirrors):
             pass
 
-        def translate_batch(self, texts, source, target):
-            return [f"译:{t}" for t in texts]
+        def translate(self, text, source, target):
+            return f"译:{text}"
 
     import office_translate.gui.server as server_mod
     monkeypatch.setattr(server_mod, "GoogleProvider", FakeGoogle)
@@ -151,3 +151,44 @@ def test_mirrors_default(client):
     r = client.get("/api/mirrors")
     assert r.status_code == 200
     assert len(r.json()["mirrors"]) == 3
+
+
+def test_settings_roundtrip(client):
+    # 读取默认
+    r = client.get("/api/settings")
+    assert r.status_code == 200
+    settings = r.json()
+    assert settings["ai"]["engine"] == "google"
+    assert "openai" in settings["ai"]["providers"]
+
+    # 修改镜像站 + 引擎
+    settings["ai"]["mirrors"] = ["https://custom.example"]
+    settings["ai"]["engine"] = "openai"
+    r = client.put("/api/settings", json=settings)
+    assert r.status_code == 200
+    assert r.json()["ai"]["mirrors"] == ["https://custom.example"]
+
+    # 重新读取（持久化）
+    r = client.get("/api/settings")
+    assert r.json()["ai"]["mirrors"] == ["https://custom.example"]
+
+
+def test_glossary_category_delete(client):
+    client.post("/api/glossary/terms", json={"category": "甲", "source": "A", "target": "a"})
+    client.post("/api/glossary/terms", json={"category": "甲", "source": "B", "target": "b"})
+    client.post("/api/glossary/terms", json={"category": "乙", "source": "C", "target": "c"})
+
+    r = client.delete("/api/glossary/categories", params={"category": "甲"})
+    assert r.json() == {"removed": True, "count": 2}
+    g = client.get("/api/glossary").json()
+    assert "甲" not in g["categories"]
+    assert "乙" in g["categories"]
+
+
+def test_glossary_batch_delete(client):
+    client.post("/api/glossary/terms", json={"category": "丙", "source": "X", "target": "x"})
+    client.post("/api/glossary/terms", json={"category": "丙", "source": "Y", "target": "y"})
+    r = client.post("/api/glossary/batch-delete", json={"category": "丙", "sources": ["X"]})
+    assert r.json() == {"removed": 1}
+    g = client.get("/api/glossary").json()
+    assert [e["source"] for e in g["categories"]["丙"]] == ["Y"]

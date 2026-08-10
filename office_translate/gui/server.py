@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any, Optional
@@ -41,6 +42,50 @@ DEFAULT_MIRRORS = [
     "https://gt1.yifan.ai",
 ]
 
+# 预置供应商（base_url + 常用模型）
+DEFAULT_PROVIDERS = {
+    "openai": {
+        "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "",
+        "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+        "default_model": "gpt-4o-mini",
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": "",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "default_model": "deepseek-chat",
+    },
+    "claude": {
+        "name": "Claude (OpenAI 兼容)",
+        "base_url": "https://api.anthropic.com/v1",
+        "api_key": "",
+        "models": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
+        "default_model": "claude-sonnet-5",
+    },
+    "ollama": {
+        "name": "Ollama (本地)",
+        "base_url": "http://localhost:11434/v1",
+        "api_key": "ollama",
+        "models": ["qwen2.5", "llama3.1"],
+        "default_model": "qwen2.5",
+    },
+}
+
+GUI_CONFIG_DEFAULTS = {
+    "ai": {
+        "engine": "google",  # google | openai
+        "providers": DEFAULT_PROVIDERS,
+        "active_provider": "openai",
+        "mirrors": DEFAULT_MIRRORS,
+        "source_lang": "en",
+        "target_lang": "zh-CN",
+        "concurrency": 4,
+    }
+}
+
 
 def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.json") -> FastAPI:
     """创建 FastAPI 应用。"""
@@ -54,6 +99,77 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
 
     cfg = config_mod.load_config(config_path)
     glossary_path = os.path.abspath(glossary_path)
+    settings_path = os.path.join(os.path.dirname(os.path.abspath(config_path)), "gui_settings.json")
+
+    def _load_settings() -> dict:
+        """读取 GUI 专属配置（与 config.yaml 分离），缺省用默认值。"""
+        if os.path.isfile(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    # 浅合并，保证缺省项存在
+                    merged = {**GUI_CONFIG_DEFAULTS}
+                    for k, v in data.items():
+                        if k in merged and isinstance(v, dict) and isinstance(merged[k], dict):
+                            merged[k] = {**merged[k], **v}
+                        else:
+                            merged[k] = v
+                    return merged
+            except (json.JSONDecodeError, OSError):
+                pass
+        return json.loads(json.dumps(GUI_CONFIG_DEFAULTS))
+
+    def _save_settings(data: dict) -> None:
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    # ---------- 设置 ----------
+
+    @app.get("/api/settings")
+    def get_settings():
+        return _load_settings()
+
+    @app.put("/api/settings")
+    def put_settings(body: dict):
+        """保存 GUI 设置（前端把整个 settings 对象传回）。"""
+        try:
+            current = _load_settings()
+            # 深合并用户改动
+            for k, v in body.items():
+                if k in current and isinstance(v, dict) and isinstance(current[k], dict):
+                    current[k] = {**current[k], **v}
+                else:
+                    current[k] = v
+            _save_settings(current)
+            return current
+        except OSError as e:
+            raise HTTPException(500, f"保存设置失败: {e}") from e
+
+    @app.post("/api/pick_file")
+    def pick_file():
+        """唤起系统原生文件选择器（tkinter），返回所选路径。"""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()  # 隐藏主窗口
+            path = filedialog.askopenfilename(
+                title="选择要翻译的文档",
+                filetypes=[
+                    ("Excel / Word", "*.xlsx *.xls *.docx"),
+                    ("所有文件", "*.*"),
+                ],
+            )
+            root.destroy()
+            if not path:
+                raise HTTPException(400, "未选择文件")
+            return {"path": path}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"无法打开文件选择器: {e}") from e
 
     # ---------- 任务 ----------
 
@@ -156,13 +272,42 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
         results.sort(key=lambda r: (not r["ok"], r["latency_ms"] or 99999))
         return {"results": results}
 
+    def _translate_with_concurrency(texts, provider, source, target, concurrency, matched=None, use_glossary=False):
+        """并发翻译（ThreadPoolExecutor），返回 results 列表。"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def translate_one(text):
+            if use_glossary and isinstance(provider, OpenAICompatProvider):
+                return translate_batch([text], provider, source, target, matched)[0]
+            return {"id": 0, "translation": provider.translate(text, source, target), "uncertain_terms": []}
+
+        results: list[Optional[dict]] = [None] * len(texts)
+        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+            futures = {pool.submit(translate_one, texts[i]): i for i in range(len(texts))}
+            for fut in as_completed(futures):
+                i = futures[fut]
+                try:
+                    r = fut.result()
+                    r["id"] = i
+                    results[i] = r
+                except ProviderError:
+                    results[i] = {
+                        "id": i,
+                        "translation": texts[i],
+                        "uncertain_terms": [{"term": texts[i][:80], "reason": "翻译失败，保留原文", "candidate": ""}],
+                    }
+        return results
+
     @app.post("/api/translate")
     def translate(body: dict):
         """AI 翻译一批文本。body: {texts, source, target, engine, provider_config, glossary_categories}"""
+        settings = _load_settings()
+        ai_cfg = settings.get("ai", GUI_CONFIG_DEFAULTS["ai"])
         texts = body.get("texts", [])
-        source = body.get("source", "en")
-        target = body.get("target", "zh-CN")
-        engine = body.get("engine", "google")
+        source = body.get("source", ai_cfg.get("source_lang", "en"))
+        target = body.get("target", ai_cfg.get("target_lang", "zh-CN"))
+        engine = body.get("engine", ai_cfg.get("engine", "google"))
+        concurrency = int(body.get("concurrency", ai_cfg.get("concurrency", 4)))
         categories = body.get("glossary_categories")
 
         # 术语库匹配精简
@@ -171,21 +316,21 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
 
         try:
             if engine == "google":
-                provider = GoogleProvider(body.get("mirrors") or DEFAULT_MIRRORS)
-                # Google 无自报，直接翻译
-                translations = provider.translate_batch(texts, source, target)
-                results = [
-                    {"id": i, "translation": t, "uncertain_terms": []}
-                    for i, t in enumerate(translations)
-                ]
+                mirrors = body.get("mirrors") or ai_cfg.get("mirrors") or DEFAULT_MIRRORS
+                provider = GoogleProvider(mirrors)
+                results = _translate_with_concurrency(
+                    texts, provider, source, target, concurrency
+                )
             elif engine == "openai":
-                pc = body.get("provider_config", {})
+                pc = body.get("provider_config") or {}
                 provider = OpenAICompatProvider(
                     base_url=pc.get("base_url", "https://api.openai.com/v1"),
                     api_key=pc.get("api_key", ""),
                     model=pc.get("model", "gpt-4o-mini"),
                 )
-                results = translate_batch(texts, provider, source, target, matched)
+                results = _translate_with_concurrency(
+                    texts, provider, source, target, concurrency, matched=matched, use_glossary=True
+                )
             else:
                 raise HTTPException(400, f"未知引擎: {engine}")
             return {"results": results, "matched_glossary": matched}
@@ -247,6 +392,31 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
         if ok:
             save_glossary(data, glossary_path)
         return {"removed": ok}
+
+    @app.delete("/api/glossary/categories")
+    def delete_glossary_category(category: str):
+        """删除整个术语类别。"""
+        data = load_glossary(glossary_path)
+        categories = data.get("categories", {})
+        if category not in categories:
+            raise HTTPException(404, f"类别不存在: {category}")
+        count = len(categories[category])
+        del categories[category]
+        save_glossary(data, glossary_path)
+        return {"removed": True, "count": count}
+
+    @app.post("/api/glossary/batch-delete")
+    def delete_glossary_terms_batch(body: dict):
+        """批量删除术语。body: {category, sources: [..]}"""
+        category = body.get("category", "")
+        sources = body.get("sources", [])
+        data = load_glossary(glossary_path)
+        entries = data.get("categories", {}).get(category, [])
+        remaining = [e for e in entries if e["source"] not in set(sources)]
+        removed = len(entries) - len(remaining)
+        data["categories"][category] = remaining
+        save_glossary(data, glossary_path)
+        return {"removed": removed}
 
     # ---------- 静态前端 ----------
 

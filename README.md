@@ -3,30 +3,58 @@
 办公文档翻译套件：把文档里需要翻译的文本导出成「一行一条」的 TXT，人工翻译后再回填，
 并额外产出「原文-译文对照版」与「仅译文版」，且**完全保留原文档的所有样式**。
 
+提供**两种使用方式**：
+- **图形界面（GUI）**：5 步流程（任务 → 提取 → AI 翻译 → 审核 → 回填），
+  支持 AI 翻译、不确定术语人工审核、分类术语库。推荐日常使用。
+- **命令行（CLI）**：手动分步执行，或 `auto` 一键翻译（适合脚本/批量）。
+
 当前支持 **xlsx**（Excel），架构已按「格式无关核心 + 格式适配器」设计，
 可扩展 **docx**（Word）、**xls** 等格式，见「扩展新格式」。
-
-## 工作流程
-
-```
-  init                extract                    人工翻译                    apply
-文档 ──► work/<job>/ ──► source.txt ── 复制为 translated.txt 并逐行翻译 ──► output/<job>_translated.xlsx
-             │             └─► map.json                                 └─► output/<job>_bilingual.xlsx
-             └─► 原始文件副本 + job.yaml
-```
-
-1. **init**：创建翻译任务。把原始文档复制进工作区 `work/<job>/`，生成任务配置 `job.yaml`。
-2. **extract**：解析文档，输出去重后的 `source.txt`（原文）与 `map.json`（位置映射）。
-3. **人工翻译**：复制 `source.txt` 为 `translated.txt` 并逐行翻译。
-4. **apply**：以原始文档为模板，把译文写回原位置，输出「仅译文」与「原文-译文对照」两份文件。
 
 ## 安装
 
 ```bash
 pip install -r requirements.txt
+# GUI 用原生窗口需另装（可选，不装则自动用浏览器打开）：
+pip install pywebview
 ```
 
-## 快速开始
+## 图形界面（推荐）
+
+```bash
+python -m office_translate gui
+```
+
+自动启动本地 Web 服务并在浏览器（或 pywebview 原生窗口）打开界面。
+界面包含三个视图：
+
+| 视图 | 功能 |
+|---|---|
+| **工作流** | 5 步流程：任务 → 提取 → AI 翻译 → 审核 → 回填 |
+| **术语库** | 按类别浏览/新增/编辑/删除术语 |
+| **设置** | AI 供应商管理、语言、并发、Google 镜像站 |
+
+**5 步流程**（顶部步骤条，可回跳）：
+1. **任务**：选择已有任务，或输入文件路径新建（支持「浏览文件」按钮唤起系统文件选择器）
+2. **提取**：解析文档，生成去重原文与位置映射
+3. **AI 翻译**：选引擎（Google 镜像站 / OpenAI 兼容供应商）与模型，批量翻译
+4. **审核**：模型自报的不确定术语以卡片展示，可接受（选类别入库）/ 修改 / 忽略
+5. **回填**：确认译文后生成「仅译文」与「原文-译文对照」两份文件
+
+### GUI 设置
+
+**设置**视图（打开后自动读取 `gui_settings.json`，改后自动保存）：
+
+- **AI 供应商**：预置 OpenAI / DeepSeek / Claude（OpenAI 兼容）/ Ollama 四个，
+  可新增/删除/编辑 Base URL、API Key、模型列表；点「设为使用」切换当前供应商。
+- **语言**：源语言（默认 en）、目标语言（默认 zh-CN）。
+- **并发数**：批量翻译并发线程数（默认 4）。
+- **Google 镜像站**：失败自动切换的镜像站列表（默认三个实测可用的），
+  可编辑、保存、一键「测试全部镜像站」测连通性与延迟排序。
+
+## CLI 使用
+
+### 手动分步
 
 ```bash
 # 1) 建任务（原始文件会被复制进 work/<job>/；job 缺省时按时间戳自动命名）
@@ -46,6 +74,21 @@ python -m office_translate apply eval_2024
 # 5) 查看工作区任务及进度
 python -m office_translate list
 ```
+
+### 一键翻译（AI 自动完成）
+
+```bash
+# 用 GUI 设置里的 AI 配置（供应商/模型/镜像站）自动完成 提取→翻译→回填
+python -m office_translate auto eval_2024
+
+# 或用命令行参数覆盖
+python -m office_translate auto eval_2024 --engine openai \
+    --base-url https://api.deepseek.com/v1 --api-key sk-xxx --model deepseek-chat
+python -m office_translate auto eval_2024 --engine google \
+    --mirrors "https://google-translate-proxy.tantu.com,https://translate.renwole.com"
+```
+
+`auto` 读 `gui_settings.json`（与 GUI 共用同一套配置）；未配置时 Google 引擎用内置默认镜像站。
 
 ### 常用可选参数
 
@@ -73,13 +116,23 @@ office_translate/
 ├─ office_translate/        # 套件包
 │  ├─ __init__.py           # 顶层 extract()/apply()，按扩展名分发
 │  ├─ __main__.py           # python -m 入口
-│  ├─ cli.py                # 命令行（init / extract / apply / list）
+│  ├─ cli.py                # 命令行（init / extract / apply / auto / list / gui）
 │  ├─ config.py             # 配置加载 / 任务脚手架 / 路径推导
 │  ├─ base.py               # FormatAdapter 抽象基类 + 注册表
 │  ├─ escape.py             # \r \n 转义/还原（格式无关）
+│  ├─ glossary.py           # 分类术语库（加载/新增/匹配精简/prompt 注入）
+│  ├─ ai/                   # AI 翻译模块
+│  │  ├─ provider.py        # Provider + OpenAI 兼容 + Google 镜像站 + MirrorPool 切换
+│  │  └─ translator.py      # 批量翻译编排 + 不确定术语 JSON 解析
+│  ├─ gui/                  # 图形界面
+│  │  ├─ server.py          # FastAPI REST 后端
+│  │  ├─ launcher.py        # 启动服务 + 浏览器/pywebview
+│  │  └─ web/index.html     # Vue 单页前端（5 步流程）
 │  └─ formats/              # 格式适配器集合
 │     └─ xlsx/              # xlsx 适配器（extractor + applier）
-├─ config.yaml              # 全局配置
+├─ config.yaml              # 全局配置（工作区/输出/分隔符）
+├─ gui_settings.json        # GUI 设置（AI 供应商/镜像站/语言/并发），GUI 或 auto 生成
+├─ glossary.json            # 分类术语库（审核沉淀 + 手动管理）
 ├─ input/                   # 原始文档（gitignore）
 ├─ work/                    # 工作区（gitignore），每个任务一个文件夹
 │  └─ <job>/
@@ -95,6 +148,26 @@ office_translate/
 └─ README.md
 ```
 
+## AI 翻译与术语库
+
+**AI 翻译引擎**：
+- **Google（镜像站）**：直接请求镜像站 `/translate_a/single` 端点（与官方同协议），
+  默认三个实测可用的镜像站；**失败自动切换**（连续失败进入冷却，冷却后恢复），
+  全部失败才报错。GUI 设置页可编辑列表并「测试全部镜像站」测速排序。
+- **OpenAI 兼容**：一套代码覆盖 OpenAI / DeepSeek / Claude / Ollama 等，
+  在 GUI 设置页配置供应商（Base URL + API Key + 模型列表）。
+
+**不确定术语审核**：AI 翻译时，模型对把握不足的术语（专有名词、缩写、多义词等）
+会自报为 `uncertain_terms`（含原因与候选译法），在 GUI 审核步骤以卡片展示，
+可接受（选类别入术语库）/ 修改 / 忽略。Google 引擎无自报能力，直接返回译文。
+
+**分类术语库**（`glossary.json`）：
+- 术语按**类别**组织（如「汽车行业」「软件」），审核接受时选择存入类别。
+- **匹配精简化**：翻译前只把「确实出现在本次待译文本中的术语」注入 prompt，
+  控制上下文、减少干扰。
+- **按类别选用**：翻译时可勾选使用哪些类别。
+- 手动管理：GUI 术语库视图按类别浏览/新增/编辑/删除（含整类删除）。
+
 ## 配置说明
 
 **全局配置 `config.yaml`**（缺省项用内置默认值）：
@@ -103,6 +176,24 @@ office_translate/
 work_dir: work      # 工作区根目录，每个翻译任务一个子文件夹
 output_dir: output  # 每个任务内 apply 产物的存放子目录名
 sep: '\n'           # 对照版分隔符，字面 \n \r \t 会还原为真实字符
+```
+
+**GUI 设置 `gui_settings.json`**（GUI 设置页自动生成与维护，`auto` 命令共用）：
+
+```json
+{
+  "ai": {
+    "engine": "google",
+    "providers": {
+      "openai": {"name": "OpenAI", "base_url": "...", "api_key": "", "models": ["gpt-4o-mini"]}
+    },
+    "active_provider": "openai",
+    "mirrors": ["https://google-translate-proxy.tantu.com"],
+    "source_lang": "en",
+    "target_lang": "zh-CN",
+    "concurrency": 4
+  }
+}
 ```
 
 **任务配置 `work/<job>/job.yaml`**（由 init 自动生成，一般无需手改）：

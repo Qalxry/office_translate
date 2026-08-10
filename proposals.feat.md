@@ -187,6 +187,15 @@ UI 顶部有**步骤条（stepper）**，当前步骤高亮、完成步骤打勾
 - 实测：镜像测试 tantu 可用 795ms / yifan 失败；术语库新增→编辑→匹配全流程正常
 - **50 个测试全部通过**
 
+**正式化增强（用户体验反馈后追加，已完成）**：
+- 用户反馈：「功能太简陋，复杂度太低，需要大幅细化，面向正式可用」
+- 后端：`/api/settings` 读写（供应商/镜像站/语言/并发，持久化到 `gui_settings.json`）；`/api/pick_file` 用 tkinter 弹原生文件选择器；术语类别删除、批量删除
+- 前端：新建任务「浏览文件」按钮（file picker）；设置页供应商管理（预置 OpenAI/DeepSeek/Claude/Ollama，可增删改/设为主用）；翻译步骤从设置拉供应商与模型；术语库类别删除
+- CLI：新增 `auto` 子命令（extract→AI 翻译→apply 一条命令，读同一 gui_settings.json，支持 --engine/--model/--mirrors 覆盖）
+- 翻译并发：`translate_batch` 支持并发（ThreadPoolExecutor），失败单条降级为原文
+- README 全面同步（GUI 使用、设置、一键翻译、术语库、目录结构）
+- **55 个测试全部通过**；一键翻译真机实测（问卷→问卷调查 / 供应商质量评估）
+
 **风险与注意**：
 - AI 批量翻译长文本（如多行单元格）需按条分隔、控制并发与限流（Google 免费端点尤其）
 - 模型 JSON 输出不稳定：必须容错降级，不阻塞主流程
