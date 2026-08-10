@@ -300,12 +300,20 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <button class="btn" @click="refreshJobs">刷新</button>
       </div>
       <div v-if="jobs.length" class="list" style="margin-top:16px;">
-        <div v-for="j in jobs" :key="j.job" class="list-item" :class="{selected: currentJob === j.job}" style="cursor:pointer;">
-          <div class="item-main" @click="selectJob(j)">
-            <div class="item-title">{{ j.job }}</div>
-            <div class="item-meta">{{ j.input }}</div>
+        <div v-for="j in jobs" :key="j.job" class="list-item" :class="{selected: currentJob === j.job}" style="cursor:pointer;flex-wrap:wrap;gap:8px;">
+          <div class="item-main" @click="selectJob(j)" style="min-width:180px;">
+            <div class="item-title" style="display:flex;align-items:center;gap:6px;">
+              {{ j.job }}
+              <span class="tag" :class="j.stage === '已导出' ? 'green' : (j.stage === '待提取' ? '' : 'blue')">{{ j.stage }}</span>
+            </div>
+            <div class="item-meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ j.input }}</div>
           </div>
-          <button class="btn sm" @click="selectJob(j)">选择</button>
+          <div style="display:flex;gap:4px;align-items:center;margin-left:auto;">
+            <a v-if="j.output_translated" class="btn sm" :href="`/api/jobs/${j.job}/download?kind=translated`" title="下载仅译文版">⬇ 译文</a>
+            <a v-if="j.output_bilingual" class="btn sm" :href="`/api/jobs/${j.job}/download?kind=bilingual`" title="下载对照版">⬇ 对照</a>
+            <button class="btn sm" @click="selectJob(j)">继续</button>
+            <button class="btn sm danger" @click="deleteJob(j)">✕</button>
+          </div>
         </div>
       </div>
       <div v-else class="empty" style="margin-top:12px;">暂无任务，输入文件路径新建一个</div>
@@ -343,24 +351,24 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <button class="btn sm" :class="{primary: translateMode === 'manual'}" @click="translateMode = 'manual'">手动翻译</button>
       </div>
       <div v-if="translateMode === 'manual'">
-        <p class="desc">手动粘贴译文（每行一条，与原文行序一一对应），可预览每条映射检查是否正确。</p>
+        <p class="desc">逐条编辑译文（与原文一一对应），编辑会实时同步到下方文本框。可先「预览翻译映射结果」加载已有译文。</p>
+        <!-- 映射列表（每条可单独编辑） -->
+        <div v-if="manualMappings.length" class="list" style="margin-bottom:12px;">
+          <div v-for="(m, i) in manualMappings" :key="i" style="padding:10px 14px;border-bottom:1px solid var(--border);">
+            <div class="item-meta" style="margin-bottom:4px;">#{{ i }} 原文</div>
+            <div class="item-title" style="margin-bottom:6px;white-space:pre-wrap;">{{ m.source }}</div>
+            <div class="item-meta" style="margin-bottom:4px;">译文</div>
+            <input v-model="m.target" @input="syncMappingToText(i)" placeholder="输入译文…" style="font-size:13px;">
+          </div>
+          <div v-if="!manualMappings.length" class="empty">暂无映射，先「预览翻译映射结果」或输入译文</div>
+        </div>
         <div class="row">
-          <label>译文文本（每行一条）</label>
-          <textarea v-model="manualTranslations" rows="10" style="font-family:monospace;"></textarea>
+          <label>译文文本（每行一条，自动同步）</label>
+          <textarea v-model="manualTranslations" rows="6" style="font-family:monospace;" @input="syncTextToMappings"></textarea>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="btn primary" @click="saveManualTranslations" :disabled="!currentJob || !manualTranslations.trim()">保存译文</button>
-          <button class="btn" @click="loadManualFromFile" :disabled="!currentJob">从文件读取</button>
-        </div>
-        <!-- 映射预览 -->
-        <div v-if="manualMappings.length" class="list" style="margin-top:14px;">
-          <div v-for="(m, i) in manualMappings" :key="i" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
-            <div class="item-meta">#{{ i }} 原文</div>
-            <div class="item-title">{{ m.source }}</div>
-            <div class="item-meta" style="margin-top:4px;">译文</div>
-            <div class="item-title">{{ m.target || '（空）' }}</div>
-            <div v-if="m.mismatch" class="item-meta" style="color:var(--warn);">⚠ 行数不匹配：原文 {{ sourceTexts.length }} 条，译文 {{ manualTranslationLines }} 条</div>
-          </div>
+          <button class="btn primary" @click="saveManualTranslations" :disabled="!currentJob || !manualTranslations.trim()">保存并进入下一步</button>
+          <button class="btn" @click="loadManualFromFile" :disabled="!currentJob">预览翻译映射结果</button>
         </div>
       </div>
       <div v-else>
@@ -450,20 +458,25 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       </div>
     </div>
 
-    <!-- 步骤 5：回填 -->
+    <!-- 步骤 5：导出 -->
     <div v-if="step === 4" class="card">
-      <h3>回填输出</h3>
-      <p class="desc">把译文写回文档，产出「仅译文」与「原文-译文对照」两份文件，样式完全保留。</p>
+      <h3>导出</h3>
+      <p class="desc">确认译文后生成「仅译文」与「原文-译文对照」两份文件，样式完全保留，可直接下载。</p>
       <div class="row">
-        <label>译文文本（直接编辑，或由 AI 翻译生成后自动填充）</label>
+        <label>译文文本（可直接编辑）</label>
         <textarea v-model="translatedTxt" rows="10" style="font-family:monospace;"></textarea>
       </div>
       <button class="btn primary" @click="doApply" :disabled="!currentJob || applying">
-        {{ applying ? '回填中…' : '生成输出文件' }}
+        {{ applying ? '导出中…' : '生成输出文件' }}
       </button>
       <div v-if="applyInfo" class="list" style="margin-top:16px;">
-        <div class="list-item"><span class="item-title">仅译文版</span><span class="item-meta">{{ applyInfo.translated_output }}</span></div>
-        <div class="list-item"><span class="item-title">对照版</span><span class="item-meta">{{ applyInfo.bilingual_output }}</span></div>
+        <div v-for="(item, kind) in applyDownloads" :key="kind" class="list-item">
+          <div class="item-main">
+            <div class="item-title">{{ item.label }}</div>
+            <div class="item-meta">{{ item.path }}</div>
+          </div>
+          <a class="btn sm" :href="item.url" :download="item.filename">⬇ 下载</a>
+        </div>
       </div>
     </div>
     </template>
@@ -479,7 +492,7 @@ createApp({
   data() {
     return {
       view: 'workflow',
-      steps: ['任务', '提取', 'AI 翻译', '审核', '回填'],
+      steps: ['任务', '提取', '翻译', '审核', '导出'],
       step: 0,
       jobs: [],
       currentJob: null,
@@ -531,6 +544,27 @@ createApp({
     activeProviderModels() {
       const p = this.settings.ai.providers[this.activeProviderKey];
       return (p && p.models && p.models.length) ? p.models : ['gpt-4o-mini'];
+    },
+    applyDownloads() {
+      if (!this.applyInfo) return [];
+      const items = [];
+      if (this.applyInfo.translated_output) {
+        items.push({
+          kind: 'translated', label: '仅译文版',
+          path: this.applyInfo.translated_output,
+          url: `/api/jobs/${this.currentJob}/download?kind=translated`,
+          filename: (this.applyInfo.translated_output || '').split('/').pop(),
+        });
+      }
+      if (this.applyInfo.bilingual_output) {
+        items.push({
+          kind: 'bilingual', label: '原文-译文对照版',
+          path: this.applyInfo.bilingual_output,
+          url: `/api/jobs/${this.currentJob}/download?kind=bilingual`,
+          filename: (this.applyInfo.bilingual_output || '').split('/').pop(),
+        });
+      }
+      return items;
     },
   },
   methods: {
@@ -740,9 +774,19 @@ createApp({
         this.toast('任务已创建');
       } catch (e) { this.toast('创建失败: ' + e.message); }
     },
-    selectJob(j) {
+    async selectJob(j) {
       this.currentJob = j.job;
-      this.step = 1;
+      // 根据任务已有进度跳转到合适步骤，并恢复状态
+      if (j.output_translated) {
+        this.step = 4;  // 已导出
+      } else if (j.translated_txt && (j.stages.includes('已翻译') || j.stages.includes('已导出'))) {
+        this.step = 3;  // 已翻译 → 审核
+      } else if (j.stages.includes('已提取')) {
+        this.step = 2;  // 已提取 → 翻译
+        await this.loadSourcePreview();
+      } else {
+        this.step = 1;  // 待提取
+      }
       this.toast('已选择任务: ' + j.job);
     },
     async doExtract() {
@@ -779,15 +823,17 @@ createApp({
       }
     },
     async loadManualFromFile() {
-      // 读取已保存的 translated.txt（若有）
+      // 加载已有译文 → 展示映射预览
       try {
         const r = await this.api(`/api/jobs/${this.currentJob}/translated_file`);
         if (r.text) {
-          this.manualTranslations = r.text;
-          this.toast('已加载已有译文');
+          this.manualTranslations = r.text.trimEnd();
+          this.toast('已加载译文，可逐条编辑');
         } else {
+          // 无译文：从原文生成空映射
+          await this.loadSourcePreview();
           this.manualTranslations = '';
-          this.toast('尚无已保存译文');
+          this.toast('尚无译文，可逐条填写');
         }
         this.refreshManualMappings();
       } catch (e) { this.toast('读取失败: ' + e.message); }
@@ -800,8 +846,18 @@ createApp({
       }));
       this.manualTranslationLines = targets.length;
     },
+    syncMappingToText() {
+      // 每条映射编辑 → 实时同步到文本框
+      this.manualTranslations = this.manualMappings.map(m => m.target).join('\n');
+    },
+    syncTextToMappings() {
+      // 文本框编辑 → 反向同步到映射列表（保持行数）
+      const targets = this.manualTranslations.split('\n');
+      this.manualMappings.forEach((m, i) => { m.target = targets[i] || ''; });
+      this.manualTranslationLines = targets.length;
+    },
     async saveManualTranslations() {
-      // 保存译文 + 校验行数
+      // 保存译文 + 校验行数 + 自动跳下一步
       const n = this.manualTranslations.split('\n').filter(l => l.trim() !== '').length;
       const expected = this.sourceTexts.length;
       if (n !== expected) {
@@ -815,9 +871,19 @@ createApp({
           body: JSON.stringify({text: this.manualTranslations}),
         });
         this.translatedTxt = this.manualTranslations;
-        this.toast('译文已保存，可进入下一步');
         this.translated = true;
+        this.toast('译文已保存');
+        this.step = 4;  // 自动跳到导出
       } catch (e) { this.toast('保存失败: ' + e.message); }
+    },
+    async deleteJob(j) {
+      if (!confirm(`删除任务「${j.job}」及其所有文件？`)) return;
+      try {
+        await this.api(`/api/jobs/${j.job}`, {method: 'DELETE'});
+        this.jobs = this.jobs.filter(x => x.job !== j.job);
+        if (this.currentJob === j.job) this.currentJob = null;
+        this.toast('任务已删除');
+      } catch (e) { this.toast('删除失败: ' + e.message); }
     },
     async doTranslate() {
       this.translating = true; this.translateProgress = 0; this.translateResults = [];
@@ -902,8 +968,9 @@ createApp({
         this.applyInfo = await this.api(`/api/jobs/${this.currentJob}/apply`, {
           method: 'POST', body: JSON.stringify({sep: '\\n'}),
         });
-        this.toast('回填完成');
-      } catch (e) { this.toast('回填失败: ' + e.message); }
+        await this.refreshJobs();  // 刷新任务列表，让任务区出现下载按钮
+        this.toast('导出完成，可下载文件');
+      } catch (e) { this.toast('导出失败: ' + e.message); }
       finally { this.applying = false; }
     },
   },

@@ -148,9 +148,71 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
 
     # ---------- 任务 ----------
 
+    def _job_status(info: dict) -> dict:
+        """计算任务进度状态与产物路径。"""
+        stages = []
+        if os.path.isfile(info["source_txt"]):
+            stages.append("已提取")
+        if os.path.isfile(info["translated_txt"]):
+            stages.append("已翻译")
+        if os.path.isfile(info["output_translated"]):
+            stages.append("已导出")
+        return {
+            "job": info["job"],
+            "job_dir": info["job_dir"],
+            "input": info["input"],
+            "stages": stages,
+            "stage": stages[-1] if stages else "待提取",
+            "output_translated": info["output_translated"] if os.path.isfile(info["output_translated"]) else None,
+            "output_bilingual": info["output_bilingual"] if os.path.isfile(info["output_bilingual"]) else None,
+            "translated_txt": info["translated_txt"],
+        }
+
     @app.get("/api/jobs")
     def list_jobs():
-        return config_mod.list_jobs(cfg)
+        return [_job_status(info) for info in config_mod.list_jobs(cfg)]
+
+    @app.get("/api/jobs/{job}/status")
+    def job_status(job: str):
+        try:
+            return _job_status(config_mod.load_job(cfg, job))
+        except config_mod.ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/jobs/{job}/download")
+    def job_download(job: str, kind: str = "translated"):
+        """下载任务输出文件（translated / bilingual）。"""
+        from fastapi.responses import FileResponse
+
+        try:
+            info = config_mod.load_job(cfg, job)
+        except config_mod.ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+        if kind == "bilingual":
+            path, label = info["output_bilingual"], "对照版"
+        elif kind == "translated":
+            path, label = info["output_translated"], "仅译文版"
+        else:
+            raise HTTPException(404, f"未知下载类型: {kind!r}（可选 translated / bilingual）")
+        if not path or not os.path.isfile(path):
+            raise HTTPException(404, f"输出文件不存在（{label}），请先完成导出")
+        return FileResponse(
+            path,
+            filename=os.path.basename(path),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.delete("/api/jobs/{job}")
+    def delete_job(job: str):
+        """删除任务（工作目录）。"""
+        import shutil
+
+        try:
+            info = config_mod.load_job(cfg, job)
+        except config_mod.ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+        shutil.rmtree(info["job_dir"], ignore_errors=True)
+        return {"removed": True}
 
     @app.post("/api/jobs")
     def create_job(body: dict):

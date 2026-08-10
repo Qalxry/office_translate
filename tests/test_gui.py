@@ -93,6 +93,36 @@ def test_create_and_extract(client, tmp_path):
     assert wb.active["A1"].value == "你好"
 
 
+def test_job_status_and_download(client, tmp_path):
+    # 建任务 + 提取 + 翻译 + apply
+    r = client.post("/api/jobs", json={"job": "dl", "input": str(tmp_path / "input" / "sample.xlsx")})
+    assert r.status_code == 200
+    client.post("/api/jobs/dl/extract")
+    client.post("/api/jobs/dl/translated", json={"text": "你好\n世界\n"})
+    client.post("/api/jobs/dl/apply", json={"sep": "\\n"})
+
+    # 任务状态（列表带 stage/output）
+    r = client.get("/api/jobs")
+    dl = [j for j in r.json() if j["job"] == "dl"][0]
+    assert dl["stage"] == "已导出"
+    assert dl["output_translated"] and dl["output_translated"].endswith("dl_translated.xlsx")
+
+    # 下载
+    r = client.get("/api/jobs/dl/download", params={"kind": "translated"})
+    assert r.status_code == 200
+    assert r.content[:2] == b"PK"  # xlsx 是 zip
+    r = client.get("/api/jobs/dl/download", params={"kind": "nope"})
+    assert r.status_code == 404
+
+
+def test_delete_job(client, tmp_path):
+    client.post("/api/jobs", json={"job": "del1", "input": str(tmp_path / "input" / "sample.xlsx")})
+    assert os.path.isdir(tmp_path / "work" / "del1")
+    r = client.delete("/api/jobs/del1")
+    assert r.json()["removed"] is True
+    assert not os.path.isdir(tmp_path / "work" / "del1")
+
+
 def test_glossary_flow(client):
     # 初始为空
     r = client.get("/api/glossary")
