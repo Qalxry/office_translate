@@ -138,7 +138,84 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
     <header>
       <h1>office_translate</h1>
       <span class="sub">导出 · AI 翻译 · 审核 · 回填</span>
+      <nav style="margin-left:auto;display:flex;gap:6px;">
+        <button class="btn sm" :class="{primary: view === 'workflow'}" @click="view = 'workflow'">工作流</button>
+        <button class="btn sm" :class="{primary: view === 'glossary'}" @click="view = 'glossary'">术语库</button>
+        <button class="btn sm" :class="{primary: view === 'settings'}" @click="view = 'settings'">设置</button>
+      </nav>
     </header>
+
+    <!-- 术语库管理视图 -->
+    <div v-if="view === 'glossary'" class="card">
+      <h3>术语库管理</h3>
+      <p class="desc">按类别浏览、编辑、删除、新增术语。审核时接受的术语也会自动沉淀到这里。</p>
+      <div class="row inline">
+        <div>
+          <label>类别</label>
+          <select v-model="glossaryCategoryFilter" @change="loadGlossaryDetail">
+            <option value="">全部</option>
+            <option v-for="c in glossaryCategories" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
+        <div style="flex:0 0 auto;display:flex;align-items:flex-end;">
+          <button class="btn sm primary" @click="showAddTerm = !showAddTerm">＋ 新增术语</button>
+        </div>
+      </div>
+      <div v-if="showAddTerm" class="card" style="margin-top:12px;background:var(--bg);">
+        <div class="row inline">
+          <div><label>类别</label><input v-model="newTerm.category" placeholder="如 汽车行业"></div>
+          <div><label>原文</label><input v-model="newTerm.source" placeholder="PPB"></div>
+          <div><label>译文</label><input v-model="newTerm.target" placeholder="十亿分之几"></div>
+          <div><label>备注</label><input v-model="newTerm.note" placeholder="可选"></div>
+          <div style="flex:0 0 auto;display:flex;align-items:flex-end;">
+            <button class="btn sm ok" @click="addTerm">保存</button>
+          </div>
+        </div>
+      </div>
+      <div v-for="cat in filteredGlossary" :key="cat.name" style="margin-top:16px;">
+        <div class="item-title" style="margin-bottom:8px;">{{ cat.name }} <span class="tag blue">{{ cat.entries.length }}</span></div>
+        <div class="list">
+          <div v-for="e in cat.entries" :key="e.source" class="list-item">
+            <div class="item-main">
+              <div class="item-title">{{ e.source }} <span style="color:var(--text-dim);font-weight:400;">→ {{ e.target }}</span></div>
+              <div class="item-meta" v-if="e.note">{{ e.note }}</div>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn sm" @click="editTerm(cat.name, e)">编辑</button>
+              <button class="btn sm danger" @click="deleteTerm(cat.name, e.source)">删除</button>
+            </div>
+          </div>
+          <div v-if="!cat.entries.length" class="empty">该类别暂无术语</div>
+        </div>
+      </div>
+      <div v-if="!filteredGlossary.length" class="empty">暂无术语，新增或审核时沉淀</div>
+    </div>
+
+    <!-- 设置视图 -->
+    <div v-if="view === 'settings'" class="card">
+      <h3>设置</h3>
+      <div class="row">
+        <label>Google 镜像站（失败自动切换，按顺序尝试）</label>
+        <textarea v-model="mirrorsText" rows="4" style="font-family:monospace;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn primary" @click="saveMirrors">保存镜像站</button>
+        <button class="btn" @click="testMirrors" :disabled="testingMirrors">{{ testingMirrors ? '测试中…' : '测试全部镜像站' }}</button>
+      </div>
+      <div v-if="mirrorTestResults.length" class="list" style="margin-top:12px;">
+        <div v-for="m in mirrorTestResults" :key="m.url" class="list-item">
+          <div class="item-main">
+            <div class="item-title">{{ m.url }}</div>
+            <div class="item-meta" v-if="m.ok">延迟 {{ m.latency_ms }}ms</div>
+          </div>
+          <span class="tag" :class="m.ok ? 'green' : 'err'" v-if="m.ok">✓ 可用</span>
+          <span class="tag err" v-else>✗ 失败</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工作流视图（5 步） -->
+    <template v-if="view === 'workflow'">
 
     <!-- 步骤条 -->
     <div class="stepper">
@@ -295,6 +372,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <div class="list-item"><span class="item-title">对照版</span><span class="item-meta">{{ applyInfo.bilingual_output }}</span></div>
       </div>
     </div>
+    </template>
   </div>
 
   <div id="toast" :class="{show: toastMsg}">{{ toastMsg }}</div>
@@ -306,6 +384,7 @@ const { createApp } = Vue;
 createApp({
   data() {
     return {
+      view: 'workflow',
       steps: ['任务', '提取', 'AI 翻译', '审核', '回填'],
       step: 0,
       jobs: [],
@@ -330,7 +409,25 @@ createApp({
       translatedTxt: '',
       toastMsg: '',
       toastTimer: null,
+      // 术语库管理
+      glossaryCategoryFilter: '',
+      showAddTerm: false,
+      newTerm: {category: '', source: '', target: '', note: ''},
+      glossaryDetail: {},
+      // 设置
+      mirrorsText: '',
+      customMirrors: null,
+      testingMirrors: false,
+      mirrorTestResults: [],
     };
+  },
+  computed: {
+    filteredGlossary() {
+      const cats = this.glossaryDetail.categories || {};
+      const names = Object.keys(cats).sort();
+      const filtered = this.glossaryCategoryFilter ? [this.glossaryCategoryFilter] : names;
+      return filtered.filter(n => cats[n]).map(name => ({name, entries: cats[name]}));
+    }
   },
   methods: {
     toast(msg) {
@@ -359,6 +456,74 @@ createApp({
         // 默认全部选中
         this.selectedCategories = [...this.glossaryCategories];
       } catch (e) { this.toast('加载术语库失败'); }
+    },
+    async loadGlossaryDetail() {
+      try {
+        this.glossaryDetail = await this.api('/api/glossary');
+        if (!this.glossaryCategories.length) {
+          this.glossaryCategories = Object.keys(this.glossaryDetail.categories || {});
+        }
+      } catch (e) { this.toast('加载术语库失败'); }
+    },
+    async addTerm() {
+      const t = this.newTerm;
+      if (!t.source || !t.target) { this.toast('原文和译文必填'); return; }
+      try {
+        await this.api('/api/glossary/terms', {
+          method: 'POST',
+          body: JSON.stringify({category: t.category || '默认', source: t.source, target: t.target, note: t.note || ''}),
+        });
+        this.newTerm = {category: '', source: '', target: '', note: ''};
+        this.showAddTerm = false;
+        await this.loadGlossaryDetail();
+        await this.loadGlossary();
+        this.toast('术语已新增');
+      } catch (e) { this.toast('新增失败: ' + e.message); }
+    },
+    async editTerm(category, entry) {
+      const target = prompt('编辑译文（' + entry.source + '）:', entry.target);
+      if (target === null) return;
+      try {
+        await this.api('/api/glossary/terms', {
+          method: 'PUT',
+          body: JSON.stringify({category, source: entry.source, target: target.trim(), note: entry.note || ''}),
+        });
+        await this.loadGlossaryDetail();
+        this.toast('已更新');
+      } catch (e) { this.toast('更新失败: ' + e.message); }
+    },
+    async deleteTerm(category, source) {
+      if (!confirm(`删除术语「${source}」？`)) return;
+      try {
+        await this.api(`/api/glossary/terms?category=${encodeURIComponent(category)}&source=${encodeURIComponent(source)}`, {method: 'DELETE'});
+        await this.loadGlossaryDetail();
+        await this.loadGlossary();
+        this.toast('已删除');
+      } catch (e) { this.toast('删除失败: ' + e.message); }
+    },
+    async loadMirrors() {
+      try {
+        const r = await this.api('/api/mirrors');
+        this.mirrorsText = r.mirrors.join('\n');
+      } catch (e) { this.toast('加载镜像站失败'); }
+    },
+    saveMirrors() {
+      const lines = this.mirrorsText.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!lines.length) { this.toast('镜像站列表不能为空'); return; }
+      this.customMirrors = lines;
+      this.toast('镜像站已保存（本次会话生效）');
+    },
+    async testMirrors() {
+      this.testingMirrors = true;
+      this.mirrorTestResults = [];
+      const mirrors = this.mirrorsText.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!mirrors.length) { this.testingMirrors = false; this.toast('请先填写镜像站'); return; }
+      try {
+        const r = await this.api('/api/mirrors/test', {method: 'POST', body: JSON.stringify({mirrors})});
+        this.mirrorTestResults = r.results;
+        this.toast('镜像站测试完成');
+      } catch (e) { this.toast('测试失败: ' + e.message); }
+      finally { this.testingMirrors = false; }
     },
     async createJob() {
       try {
@@ -400,7 +565,7 @@ createApp({
         const body = {
           texts, source: 'en', target: 'zh-CN', engine: this.engine,
           glossary_categories: this.selectedCategories,
-          mirrors: null,
+          mirrors: this.customMirrors || null,
           provider_config: this.engine === 'openai'
             ? {base_url: this.openaiBaseUrl, api_key: this.openaiApiKey, model: this.openaiModel}
             : undefined,
@@ -468,7 +633,10 @@ createApp({
       finally { this.applying = false; }
     },
   },
-  mounted() { this.refreshJobs(); },
+  mounted() {
+    this.refreshJobs();
+    this.loadMirrors();
+  },
 }).mount('#app');
 </script>
 </body>

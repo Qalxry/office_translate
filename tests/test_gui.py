@@ -105,3 +105,49 @@ def test_translate_google_mocked(client, monkeypatch):
 def test_translate_unknown_engine(client):
     r = client.post("/api/translate", json={"texts": ["Hello"], "engine": "nope"})
     assert r.status_code == 400
+
+
+def test_glossary_edit_and_delete(client):
+    # 新增
+    r = client.post("/api/glossary/terms", json={"category": "软件", "source": "API", "target": "接口"})
+    assert r.status_code == 200
+
+    # 编辑
+    r = client.put("/api/glossary/terms", json={"category": "软件", "source": "API", "target": "应用程序接口", "note": "更新"})
+    assert r.status_code == 200
+    assert r.json()["target"] == "应用程序接口"
+
+    # 编辑不存在的 → 404
+    r = client.put("/api/glossary/terms", json={"category": "软件", "source": "不存在", "target": "x"})
+    assert r.status_code == 404
+
+    # 删除
+    r = client.delete("/api/glossary/terms", params={"category": "软件", "source": "API"})
+    assert r.json()["removed"] is True
+
+
+def test_mirrors_test_mocked(client, monkeypatch):
+    import office_translate.gui.server as server_mod
+
+    class FakeGoogle:
+        name = "google"
+
+        def __init__(self, mirrors):
+            pass
+
+        def translate(self, text, source, target):
+            return "ok"
+
+    monkeypatch.setattr(server_mod, "GoogleProvider", FakeGoogle)
+    r = client.post("/api/mirrors/test", json={"mirrors": ["https://a.example", "https://b.example"]})
+    assert r.status_code == 200, r.text
+    results = r.json()["results"]
+    assert len(results) == 2
+    assert all(x["ok"] for x in results)
+    assert results[0]["url"] == "https://a.example"
+
+
+def test_mirrors_default(client):
+    r = client.get("/api/mirrors")
+    assert r.status_code == 200
+    assert len(r.json()["mirrors"]) == 3

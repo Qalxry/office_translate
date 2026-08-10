@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -139,6 +140,22 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
     def get_mirrors():
         return {"mirrors": DEFAULT_MIRRORS}
 
+    @app.post("/api/mirrors/test")
+    def test_mirrors(body: dict):
+        """测试镜像站连通性与延迟，返回排序后的结果。body: {mirrors}"""
+        mirrors = body.get("mirrors") or DEFAULT_MIRRORS
+        results = []
+        for m in mirrors:
+            start = time.time()
+            try:
+                provider = GoogleProvider([m])
+                provider.translate("Hello", "en", "zh-CN")
+                results.append({"url": m, "ok": True, "latency_ms": int((time.time() - start) * 1000)})
+            except ProviderError:
+                results.append({"url": m, "ok": False, "latency_ms": None})
+        results.sort(key=lambda r: (not r["ok"], r["latency_ms"] or 99999))
+        return {"results": results}
+
     @app.post("/api/translate")
     def translate(body: dict):
         """AI 翻译一批文本。body: {texts, source, target, engine, provider_config, glossary_categories}"""
@@ -196,6 +213,30 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
             entry = add_term(data, category, source, target, note)
             save_glossary(data, glossary_path)
             return entry
+        except GlossaryError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.put("/api/glossary/terms")
+    def update_glossary_term(body: dict):
+        """编辑术语：按 category+source 定位，更新 target/note。"""
+        category = body.get("category", "")
+        source = body.get("source", "")
+        target = body.get("target", "")
+        note = body.get("note", "")
+        try:
+            data = load_glossary(glossary_path)
+            entries = data.get("categories", {}).get(category, [])
+            for e in entries:
+                if e["source"] == source:
+                    if target:
+                        e["target"] = target
+                    if note is not None:
+                        e["note"] = note
+                    save_glossary(data, glossary_path)
+                    return e
+            raise HTTPException(404, f"术语不存在: {category}/{source}")
+        except HTTPException:
+            raise
         except GlossaryError as e:
             raise HTTPException(400, str(e)) from e
 
