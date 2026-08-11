@@ -7,6 +7,10 @@ test/
 test_raw/
 # 归档的旧方案（软删除，不参与版本控制）
 .old/
+# 本地数据：术语库 / GUI 设置（含 API 密钥），勿提交！
+data/
+# 外部参考代码库（本地克隆，不参与版本控制）
+ref_repos/
 # Python
 __pycache__/
 *.pyc

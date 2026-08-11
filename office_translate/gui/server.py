@@ -91,7 +91,7 @@ GUI_CONFIG_DEFAULTS = {
 }
 
 
-def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.json") -> FastAPI:
+def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glossary.json") -> FastAPI:
     """创建 FastAPI 应用。"""
     app = FastAPI(title="office_translate GUI")
     app.add_middleware(
@@ -103,7 +103,7 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
 
     cfg = config_mod.load_config(config_path)
     glossary_path = os.path.abspath(glossary_path)
-    settings_path = os.path.join(os.path.dirname(os.path.abspath(config_path)), "gui_settings.json")
+    settings_path = os.path.join(os.path.dirname(os.path.abspath(config_path)), "data", "gui_settings.json")
 
     def _load_settings() -> dict:
         """读取 GUI 专属配置（与 config.yaml 分离），缺省用默认值。"""
@@ -125,6 +125,7 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "glossary.
         return json.loads(json.dumps(GUI_CONFIG_DEFAULTS))
 
     def _save_settings(data: dict) -> None:
+        os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 

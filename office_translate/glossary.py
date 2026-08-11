@@ -23,7 +23,7 @@ class GlossaryError(Exception):
     """术语库操作错误。"""
 
 
-DEFAULT_GLOSSARY_FILE = "glossary.json"
+DEFAULT_GLOSSARY_FILE = "data/glossary.json"
 
 
 def _now_iso() -> str:
@@ -44,6 +44,7 @@ def load_glossary(path: str = DEFAULT_GLOSSARY_FILE) -> dict[str, Any]:
 def save_glossary(data: dict[str, Any], path: str = DEFAULT_GLOSSARY_FILE) -> None:
     """写回术语库（保留已存在条目）。"""
     payload = {"categories": data.get("categories", {})}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 

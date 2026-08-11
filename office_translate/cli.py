@@ -142,7 +142,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
 def _load_ai_settings(config_path: str) -> dict:
     """读取 GUI 设置（gui_settings.json）里的 AI 配置；文件不存在时用默认值。"""
     base = os.path.dirname(os.path.abspath(config_path)) if os.path.isfile(config_path) else os.getcwd()
-    path = os.path.join(base, "gui_settings.json")
+    path = os.path.join(base, "data", "gui_settings.json")
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8") as f:

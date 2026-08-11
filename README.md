@@ -43,7 +43,7 @@ python -m office_translate gui
 
 ### GUI 设置
 
-**设置**视图（打开后自动读取 `gui_settings.json`，改后自动保存）：
+**设置**视图（打开后自动读取 `data/gui_settings.json`，改后自动保存）：
 
 - **AI 供应商**：预置 OpenAI / DeepSeek / Claude（OpenAI 兼容）/ Ollama 四个，
   可新增/删除/编辑 Base URL、API Key、模型列表；点「设为使用」切换当前供应商。
@@ -88,7 +88,7 @@ python -m office_translate auto eval_2024 --engine google \
     --mirrors "https://google-translate-proxy.tantu.com,https://translate.renwole.com"
 ```
 
-`auto` 读 `gui_settings.json`（与 GUI 共用同一套配置）；未配置时 Google 引擎用内置默认镜像站。
+`auto` 读 `data/gui_settings.json`（与 GUI 共用同一套配置）；未配置时 Google 引擎用内置默认镜像站。
 
 ### 常用可选参数
 
@@ -131,8 +131,9 @@ office_translate/
 │  └─ formats/              # 格式适配器集合
 │     └─ xlsx/              # xlsx 适配器（extractor + applier）
 ├─ config.yaml              # 全局配置（工作区/输出/分隔符）
-├─ gui_settings.json        # GUI 设置（AI 供应商/镜像站/语言/并发），GUI 或 auto 生成
-├─ glossary.json            # 分类术语库（审核沉淀 + 手动管理）
+├─ data/                    # 本地数据（gitignore）：GUI 设置 / 分类术语库
+│  ├─ gui_settings.json     # GUI 设置（AI 供应商/镜像站/语言/并发），GUI 或 auto 生成
+│  └─ glossary.json         # 分类术语库（审核沉淀 + 手动管理）
 ├─ input/                   # 原始文档（gitignore）
 ├─ work/                    # 工作区（gitignore），每个任务一个文件夹
 │  └─ <job>/
@@ -161,7 +162,7 @@ office_translate/
 会自报为 `uncertain_terms`（含原因与候选译法），在 GUI 审核步骤以卡片展示，
 可接受（选类别入术语库）/ 修改 / 忽略。Google 引擎无自报能力，直接返回译文。
 
-**分类术语库**（`glossary.json`）：
+**分类术语库**（`data/glossary.json`）：
 - 术语按**类别**组织（如「汽车行业」「软件」），审核接受时选择存入类别。
 - **匹配精简化**：翻译前只把「确实出现在本次待译文本中的术语」注入 prompt，
   控制上下文、减少干扰。
@@ -178,7 +179,7 @@ output_dir: output  # 每个任务内 apply 产物的存放子目录名
 sep: '\n'           # 对照版分隔符，字面 \n \r \t 会还原为真实字符
 ```
 
-**GUI 设置 `gui_settings.json`**（GUI 设置页自动生成与维护，`auto` 命令共用）：
+**GUI 设置 `data/gui_settings.json`**（GUI 设置页自动生成与维护，`auto` 命令共用）：
 
 ```json
 {

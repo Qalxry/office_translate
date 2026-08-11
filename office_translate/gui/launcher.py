@@ -40,7 +40,7 @@ def _open_webview(url: str) -> None:
 
 def launch(
     config_path: str = "config.yaml",
-    glossary_path: str = "glossary.json",
+    glossary_path: str = "data/glossary.json",
     host: str = "127.0.0.1",
     port: Optional[int] = None,
     use_webview: bool = True,
@@ -85,7 +85,7 @@ def main() -> None:
 
     p = argparse.ArgumentParser(description="office_translate GUI")
     p.add_argument("-c", "--config", default="config.yaml", help="配置文件路径")
-    p.add_argument("-g", "--glossary", default="glossary.json", help="术语库路径")
+    p.add_argument("-g", "--glossary", default="data/glossary.json", help="术语库路径")
     p.add_argument("--port", type=int, default=None, help="端口（默认自动选）")
     p.add_argument("--no-webview", action="store_true", help="强制用浏览器而非 pywebview")
     args = p.parse_args()
