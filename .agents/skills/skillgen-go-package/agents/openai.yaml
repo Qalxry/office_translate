@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skillgen Go Package"
+  short_description: "Generate docs skills from pkg.go.dev"
+  default_prompt: "Use $skillgen-go-package to create an offline docs skill from a Go module or import path."

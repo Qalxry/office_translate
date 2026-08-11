@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ideate"
+  short_description: "Adapt creative depth from exploration to shaping"
+  default_prompt: "Use $ideate to infer the right phase and creative posture, then explore or enrich this idea without mixing workflows."

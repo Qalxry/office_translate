@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skillgen Auto"
+  short_description: "Auto-route docs skill generation"
+  default_prompt: "Use $skillgen-auto to explore a target project and choose the best docs skill generator."

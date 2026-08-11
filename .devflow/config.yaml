@@ -1,0 +1,13 @@
+version: 2
+platforms: ["claude-code","codex"]
+skills:
+  with_dependencies: ["devflow"]
+  direct: []
+  include: []
+  exclude: []
+agents:
+  codex:
+    with_dependencies: ["base","devflow"]
+    direct: []
+    include: []
+    exclude: []

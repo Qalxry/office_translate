@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skillgen llms.txt"
+  short_description: "Generate offline docs skills from llms.txt"
+  default_prompt: "Use $skillgen-llms-txt to create an offline documentation skill from an llms.txt URL."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "System Design"
+  short_description: "Architecture design workflow"
+  default_prompt: "Use $system-design to design a resilient web service architecture."

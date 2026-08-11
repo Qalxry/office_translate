@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "skills": {
+    "create-proposals": {
+      "sourcePath": "skills/devflow/proposals/create-proposals",
+      "targetPath": ".agents/skills/create-proposals",
+      "computedHash": "d2cc97ef4d5d80feecbf631c799066c78025b70a674a809fe9e7c4abfe2bd332"
+    },
+    "distill-experience": {
+      "sourcePath": "skills/devflow/knowledge/distill-experience",
+      "targetPath": ".agents/skills/distill-experience",
+      "computedHash": "894f538c11bfe26c52fda35499506eeb40929709e8fea2dc82248dba099bd22c"
+    },
+    "ideate": {
+      "sourcePath": "skills/devflow/product/ideate",
+      "targetPath": ".agents/skills/ideate",
+      "computedHash": "ddad39914aaca7884fce35313d5989aaf59f748e5bed7d09a69b402189213962"
+    },
+    "implement-proposals": {
+      "sourcePath": "skills/devflow/proposals/implement-proposals",
+      "targetPath": ".agents/skills/implement-proposals",
+      "computedHash": "6dc39b072944d03b386ecfabbc9faeab80f972200e41330dd2449585be038abc"
+    },
+    "index-ref-repos": {
+      "sourcePath": "skills/devflow/knowledge/index-ref-repos",
+      "targetPath": ".agents/skills/index-ref-repos",
+      "computedHash": "c2b8e26782b88f622b36a96b8995167fbae0affe98aba05cd7db13f4edc5e912"
+    },
+    "markdown-outline": {
+      "sourcePath": "skills/devflow/knowledge/markdown-outline",
+      "targetPath": ".agents/skills/markdown-outline",
+      "computedHash": "8fb32fee1f74e78f55948316fa5c07e4bdb8b79f22d332b34ef083990674b274"
+    },
+    "migrate-proposals": {
+      "sourcePath": "skills/devflow/architecture/migrate-proposals",
+      "targetPath": ".agents/skills/migrate-proposals",
+      "computedHash": "273fb7212bd27295a8af7650eda9f0beebd95617368939ae0af6358d8e278ce7"
+    },
+    "prd-spec-authoring": {
+      "sourcePath": "skills/devflow/architecture/prd-spec-authoring",
+      "targetPath": ".agents/skills/prd-spec-authoring",
+      "computedHash": "1f9d41ac5757fe07cc7a9616c70cb265ffbea954c4349ad741fc95e9ecaca436"
+    },
+    "quick-build": {
+      "sourcePath": "skills/devflow/product/quick-build",
+      "targetPath": ".agents/skills/quick-build",
+      "computedHash": "bf499822676fc11218893ab4f08c7f433120956a475215a45d1daed7149b90b5"
+    },
+    "refactoring-planner": {
+      "sourcePath": "skills/devflow/architecture/refactoring-planner",
+      "targetPath": ".agents/skills/refactoring-planner",
+      "computedHash": "49f46231d633cd5a2ccc1a6069666a29d4fd13e88e59ad6b7ca48088b5dae25c"
+    },
+    "review-align-proposals": {
+      "sourcePath": "skills/devflow/proposals/review-align-proposals",
+      "targetPath": ".agents/skills/review-align-proposals",
+      "computedHash": "830d7d9bcda0060d22625b59b176f8e23b4d804837470e5865ddf40a4cee1bd4"
+    },
+    "skillgen-auto": {
+      "sourcePath": "skills/devflow/skill-authoring/skillgen-auto",
+      "targetPath": ".agents/skills/skillgen-auto",
+      "computedHash": "6be7d1f5d48ab03b5e68947759c43c29b52cd35cc5147ee88b255356dcce7952"
+    },
+    "skillgen-go-package": {
+      "sourcePath": "skills/devflow/skill-authoring/skillgen-go-package",
+      "targetPath": ".agents/skills/skillgen-go-package",
+      "computedHash": "8ce7950b2dab054e8458cd4c740dde532589e952d153bafa127fbcda468fd2b8"
+    },
+    "skillgen-llms-txt": {
+      "sourcePath": "skills/devflow/skill-authoring/skillgen-llms-txt",
+      "targetPath": ".agents/skills/skillgen-llms-txt",
+      "computedHash": "44c79bed5f7d8ae0d1522c2e719050d7800e33a8c705441cb60b525bf9fe2779"
+    },
+    "skillgen-repo": {
+      "sourcePath": "skills/devflow/skill-authoring/skillgen-repo",
+      "targetPath": ".agents/skills/skillgen-repo",
+      "computedHash": "26b1091ce3be50bda7a596acbdbe51fd9fcb04136ce558dd7969f1f844e0e580"
+    },
+    "skillgen-website": {
+      "sourcePath": "skills/devflow/skill-authoring/skillgen-website",
+      "targetPath": ".agents/skills/skillgen-website",
+      "computedHash": "65af0ba8831a0c34150a267492c877ea86254a221286add029b3c7c8579b42cd"
+    },
+    "system-design": {
+      "sourcePath": "skills/devflow/architecture/system-design",
+      "targetPath": ".agents/skills/system-design",
+      "computedHash": "5bb14fdf514dfeeb290bff3f98330b5f2ee4a907429672971d72c16766e70bb0"
+    },
+    "systematic-code-review": {
+      "sourcePath": "skills/devflow/proposals/systematic-code-review",
+      "targetPath": ".agents/skills/systematic-code-review",
+      "computedHash": "0ae20fce28a5c0a63fc568c1dfd05de51b9f17bb8eea6ebaabba06b90ec53f77"
+    }
+  },
+  "agents": {
+    "codex": {
+      "architect": {
+        "sourcePath": "agents/codex/devflow/architect.toml",
+        "targetPath": ".codex/agents/architect.toml",
+        "computedHash": "386449a2e95747d28d68064d5929bb75c4ef718917527863a27a0a19c7e232e3"
+      },
+      "challenger": {
+        "sourcePath": "agents/codex/devflow/challenger.toml",
+        "targetPath": ".codex/agents/challenger.toml",
+        "computedHash": "8eb2ec6895cd0d3c5460db0796dfbebc7c886904b245af8fc0593ddb7f2880b3"
+      },
+      "explorer": {
+        "sourcePath": "agents/codex/devflow/explorer.toml",
+        "targetPath": ".codex/agents/explorer.toml",
+        "computedHash": "2b7a5301bd40f7b14b6c692e1554c8bf9fd83822c881f693a80166dbae5502e5"
+      },
+      "implementer": {
+        "sourcePath": "agents/codex/devflow/implementer.toml",
+        "targetPath": ".codex/agents/implementer.toml",
+        "computedHash": "66579b40f7388e276571763357e1e92929f776b96508c888027479dcea18073b"
+      },
+      "level1": {
+        "sourcePath": "agents/codex/base/level1.toml",
+        "targetPath": ".codex/agents/level1.toml",
+        "computedHash": "eccd9b23b9ec228340a10d71b1e5e4a5afdef13ce78c0793ce908f6150c4639b"
+      },
+      "level2": {
+        "sourcePath": "agents/codex/base/level2.toml",
+        "targetPath": ".codex/agents/level2.toml",
+        "computedHash": "633fa21839c911c0ad35f8d30f41884286ea4086fda3e0edb4ea2391a54ba96a"
+      },
+      "level3": {
+        "sourcePath": "agents/codex/base/level3.toml",
+        "targetPath": ".codex/agents/level3.toml",
+        "computedHash": "b7768876e87af2f3898487858ece6bf0b890c4bf77c66e16458ea923b5827e5e"
+      },
+      "level4": {
+        "sourcePath": "agents/codex/base/level4.toml",
+        "targetPath": ".codex/agents/level4.toml",
+        "computedHash": "d6bba78e699a6e163614f9fce8c31029740a3907c041bc3826b4f1d374ca2bac"
+      },
+      "level5": {
+        "sourcePath": "agents/codex/base/level5.toml",
+        "targetPath": ".codex/agents/level5.toml",
+        "computedHash": "647909665d2cbbd7d29d83cc80eb2f3f4e98611b5694763a45e5368035165786"
+      },
+      "reviewer": {
+        "sourcePath": "agents/codex/devflow/reviewer.toml",
+        "targetPath": ".codex/agents/reviewer.toml",
+        "computedHash": "6ddec220852c819d352917b1435a123f1750f9ddd2b3df7adb353f49138cd070"
+      },
+      "verifier": {
+        "sourcePath": "agents/codex/devflow/verifier.toml",
+        "targetPath": ".codex/agents/verifier.toml",
+        "computedHash": "9fb3276fbb24d44be70e22dc60951dcb932c6a6b270ecbbe1101624e467f08f5"
+      }
+    }
+  }
+}

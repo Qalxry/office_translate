@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quick Build"
+  short_description: "Plan and build ready features without heavy docs"
+  default_prompt: "Use $quick-build to create a compact Build Brief and implement this ready feature without a PRD, SPEC, PLAN, or proposal."

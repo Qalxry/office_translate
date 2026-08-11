@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skillgen Repo"
+  short_description: "Build documentation skills from GitHub repos"
+  default_prompt: "Use $skillgen-repo to turn this GitHub repository into an offline documentation skill."

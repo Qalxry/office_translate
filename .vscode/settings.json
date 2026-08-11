@@ -1,0 +1,32 @@
+{
+  "python.analysis.extraPaths": [
+    // "E:/Class/GraduationProject/Dev"
+    // "/media/takagisan/Storage/Class/GraduationProject/Dev"
+  ],
+  "prettier.tabWidth": 2,
+  "python.defaultInterpreterPath": "/home/takagisan/miniconda3/envs/dm",
+  "markdownlint.config": {
+    "MD032": false,
+    "MD012": false,
+    "MD031": false,
+    "MD036": false,
+    "MD040": false,
+    "MD022": false,
+    "MD047": false,
+    "MD009": false,
+    "MD060": false,
+    "MD024": false,
+    "MD041": false,
+  },
+  // "chat.exploreAgent.defaultModel": "DeepSeek V4 Flash (max) (oaicopilot)",
+  // "chat.exploreAgent.defaultModel": "Claude Sonnet 4.6 (copilot)",
+  // "chat.exploreAgent.defaultModel": "Claude Opus 4.6 (copilot)",
+  // "github.copilot.chat.exploreAgent.enabled": false,
+  // "github.copilot.chat.exploreAgent.model": "Claude Sonnet 4.6 (copilot)",
+  "chat.tools.terminal.autoApprove": {
+    "rrun": false,
+  },
+  // ,
+  // "python-envs.defaultEnvManager": "ms-python.python:conda",
+  // "python-envs.defaultPackageManager": "ms-python.python:conda"
+}
