@@ -98,7 +98,7 @@ def test_extract_json_invalid():
 def test_parse_result_valid():
     content = '{"translation": "你好", "uncertain_terms": [{"term": "PPB", "reason": "缩写", "candidate": "十亿分之几"}]}'
     parsed = _parse_result(content)
-    assert parsed["translation"] == "你好"
+    assert parsed["translations"] == ["你好"]
     assert parsed["uncertain_terms"][0]["term"] == "PPB"
 
 
@@ -110,19 +110,80 @@ def test_schema_shape():
     # 模型按 schema 输出
     content = '{"translation": "供应商质量评估", "uncertain_terms": [{"term": "PPB", "reason": "缩写", "candidate": "十亿分之几"}]}'
     parsed = _parse_result(content)
-    assert parsed["translation"] == "供应商质量评估"
+    assert parsed["translations"] == ["供应商质量评估"]
     assert parsed["uncertain_terms"][0]["term"] == "PPB"
 
 
 def test_parse_result_no_json_fallback():
     parsed = _parse_result("直接输出的译文")
-    assert parsed["translation"] == "直接输出的译文"
+    assert parsed["translations"] == ["直接输出的译文"]
     assert parsed["uncertain_terms"] == []
 
 
 def test_parse_result_json_without_translation_fallback():
     parsed = _parse_result('{"foo": "bar"}')
     assert parsed["uncertain_terms"] == []
+
+
+def test_parse_result_xml_tags():
+    """XML 兜底输出（每行一个 <item>，<uncertain> 独立块）应能解析。"""
+    content = (
+        "<translation_result>\n"
+        "  <item>供应商质量评估涵盖制造过程。</item>\n"
+        "  <item>请确保PPAP文件完整。</item>\n"
+        "  <uncertain>\n"
+        "    <term>PPAP</term>\n"
+        "    <reason>缩写，不确定</reason>\n"
+        "    <candidate>生产件批准程序</candidate>\n"
+        "  </uncertain>\n"
+        "  <uncertain>\n"
+        "    <term>Kosu</term>\n"
+        "    <reason>日语术语</reason>\n"
+        "    <candidate>工时</candidate>\n"
+        "  </uncertain>\n"
+        "</translation_result>"
+    )
+    parsed = _parse_result(content)
+    assert parsed["translations"] == ["供应商质量评估涵盖制造过程。", "请确保PPAP文件完整。"]
+    assert len(parsed["uncertain_terms"]) == 2
+    assert parsed["uncertain_terms"][0]["term"] == "PPAP"
+    assert parsed["uncertain_terms"][0]["reason"] == "缩写，不确定"
+    assert parsed["uncertain_terms"][1]["candidate"] == "工时"
+
+
+def test_parse_result_xml_empty_terms():
+    """XML 输出且不确定术语为空（无 <uncertain> 块）应解析为无术语。"""
+    content = (
+        "<translation_result>\n"
+        "  <item>你好</item>\n"
+        "</translation_result>"
+    )
+    parsed = _parse_result(content)
+    assert parsed["translations"] == ["你好"]
+    assert parsed["uncertain_terms"] == []
+
+
+def test_parse_result_xml_line_breaks_safe():
+    """行内换行不影响对齐：item 里的 \n 不导致行数漂移。"""
+    content = (
+        "<translation_result>\n"
+        "  <item>第一行\n带换行</item>\n"
+        "  <item>第二行</item>\n"
+        "</translation_result>"
+    )
+    parsed = _parse_result(content)
+    assert parsed["translations"] == ["第一行\n带换行", "第二行"]
+
+
+def test_parse_result_xml_entities():
+    """XML 实体（&lt; &amp;）应反转义。"""
+    content = (
+        "<translation_result>\n"
+        "  <item>A &lt; B &amp; C</item>\n"
+        "</translation_result>"
+    )
+    parsed = _parse_result(content)
+    assert parsed["translations"] == ["A < B & C"]
 
 
 # ---------- translate_batch ----------

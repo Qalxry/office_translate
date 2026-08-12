@@ -43,6 +43,8 @@ DEFAULT_MIRRORS = [
 ]
 
 # 预置供应商（base_url + 常用模型 + 模型上下文 token 数，用于分块）
+# model_configs：模型级参数 {模型名: {model_context, temperature, max_tokens, top_p, ...}}，
+# 支持 OpenAI 兼容 API 的任意请求参数（thinking / reasoning_effort / top_k 等放 extra）。
 DEFAULT_PROVIDERS = {
     "openai": {
         "name": "OpenAI",
@@ -51,6 +53,11 @@ DEFAULT_PROVIDERS = {
         "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
         "default_model": "gpt-4o-mini",
         "model_context": 128000,
+        "model_configs": {
+            "gpt-4o-mini": {"model_context": 128000, "temperature": 0.6, "max_tokens": 8192},
+            "gpt-4o": {"model_context": 128000, "temperature": 0.6, "max_tokens": 16384},
+            "gpt-4.1-mini": {"model_context": 1000000, "temperature": 0.6, "max_tokens": 32768},
+        },
     },
     "deepseek": {
         "name": "DeepSeek",
@@ -59,6 +66,13 @@ DEFAULT_PROVIDERS = {
         "models": ["deepseek-chat", "deepseek-reasoner"],
         "default_model": "deepseek-chat",
         "model_context": 128000,
+        "model_configs": {
+            "deepseek-chat": {"model_context": 128000, "temperature": 0.6, "max_tokens": 8192},
+            "deepseek-reasoner": {
+                "model_context": 128000, "temperature": 1.0, "max_tokens": 8192,
+                "thinking": {"type": "enabled"},
+            },
+        },
     },
     "claude": {
         "name": "Claude (OpenAI 兼容)",
@@ -67,6 +81,11 @@ DEFAULT_PROVIDERS = {
         "models": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
         "default_model": "claude-sonnet-5",
         "model_context": 200000,
+        "model_configs": {
+            "claude-sonnet-5": {"model_context": 200000, "temperature": 0.6, "max_tokens": 8192},
+            "claude-opus-5": {"model_context": 200000, "temperature": 0.6, "max_tokens": 8192},
+            "claude-haiku-4-5-20251001": {"model_context": 200000, "temperature": 0.6, "max_tokens": 8192},
+        },
     },
     "ollama": {
         "name": "Ollama (本地)",
@@ -75,6 +94,10 @@ DEFAULT_PROVIDERS = {
         "models": ["qwen2.5", "llama3.1"],
         "default_model": "qwen2.5",
         "model_context": 32768,
+        "model_configs": {
+            "qwen2.5": {"model_context": 32768, "temperature": 0.6, "max_tokens": 8192},
+            "llama3.1": {"model_context": 32768, "temperature": 0.6, "max_tokens": 8192},
+        },
     },
 }
 
@@ -112,13 +135,38 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
                 with open(settings_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, dict):
-                    # 浅合并，保证缺省项存在
+                    # 深合并，保证缺省项存在
                     merged = {**GUI_CONFIG_DEFAULTS}
                     for k, v in data.items():
                         if k in merged and isinstance(v, dict) and isinstance(merged[k], dict):
                             merged[k] = {**merged[k], **v}
                         else:
                             merged[k] = v
+                    # providers 逐项深合并：用户覆盖保留，默认字段（model_context 等）不丢
+                    ai_cfg_merged = merged.get("ai")
+                    if isinstance(ai_cfg_merged, dict):
+                        user_providers = ai_cfg_merged.get("providers")
+                        if isinstance(user_providers, dict):
+                            for pk, pv in user_providers.items():
+                                base = DEFAULT_PROVIDERS.get(pk)
+                                if isinstance(base, dict) and isinstance(pv, dict):
+                                    # 用户配置覆盖默认；默认字段只在用户未设置时兜底
+                                    merged_pv = {**base, **pv}
+                                    # model_configs：用户已存在的模型完全尊重用户配置（空字段不注入默认）；
+                                    # 默认参数只兜底给「默认存在但用户从未配置」的模型。
+                                    bmc = base.get("model_configs") or {}
+                                    umc = pv.get("model_configs") or {}
+                                    mc_merged = {**bmc}
+                                    for mname, mcfg in umc.items():
+                                        if isinstance(mcfg, dict):
+                                            mc_merged[mname] = mcfg  # 用户配置完整覆盖默认
+                                        else:
+                                            mc_merged[mname] = mcfg
+                                    # 用户显式删除的模型不恢复（removed_models）
+                                    for rm in (pv.get("removed_models") or []):
+                                        mc_merged.pop(rm, None)
+                                    merged_pv["model_configs"] = mc_merged
+                                    user_providers[pk] = merged_pv
                     return merged
             except (json.JSONDecodeError, OSError):
                 pass
@@ -305,6 +353,47 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
         except Exception as e:
             raise HTTPException(400, str(e)) from e
 
+    def _ai_output_path(info: dict) -> str:
+        """AI 翻译输出（逐行译文/不确定术语/思考）的持久化文件。"""
+        return os.path.join(info["job_dir"], "ai_output.json")
+
+    @app.post("/api/jobs/{job}/ai_output")
+    def job_save_ai_output(job: str, body: dict):
+        """保存 AI 翻译完整输出（results + thinking blocks），供继续任务时恢复。"""
+        try:
+            info = config_mod.load_job(cfg, job)
+            # results 去掉 thinking（已存 blocks，避免重复）；blocks 保留
+            results = body.get("results", [])
+            cleaned = [
+                {"id": r.get("id"), "translation": r.get("translation", ""),
+                 "uncertain_terms": r.get("uncertain_terms", [])}
+                for r in results
+            ]
+            payload = {"results": cleaned, "blocks": body.get("blocks", [])}
+            with open(_ai_output_path(info), "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            return {"ok": True}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/jobs/{job}/ai_output")
+    def job_read_ai_output(job: str):
+        """读取已保存的 AI 翻译输出；无则返回空结构。"""
+        try:
+            info = config_mod.load_job(cfg, job)
+            path = _ai_output_path(info)
+            if not os.path.isfile(path):
+                return {"results": [], "blocks": []}
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {"results": data.get("results", []), "blocks": data.get("blocks", [])}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, str(e)) from e
+
     @app.post("/api/jobs/{job}/apply")
     def job_apply(job: str, body: dict):
         try:
@@ -329,6 +418,45 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
     @app.get("/api/mirrors")
     def get_mirrors():
         return {"mirrors": DEFAULT_MIRRORS}
+
+    @app.get("/api/openrouter/models")
+    def openrouter_models():
+        """从 OpenRouter 拉取模型元数据（id / name / context_length），供设置页填充默认配置。"""
+        import requests as _requests
+
+        try:
+            r = _requests.get(
+                "https://openrouter.ai/api/v1/models",
+                timeout=10,
+                headers={"User-Agent": "office_translate/1.0"},
+            )
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            raise HTTPException(502, f"拉取 OpenRouter 模型列表失败: {e}") from e
+        models = []
+        for m in (data.get("data") or []):
+            mid = m.get("id")
+            if not mid:
+                continue
+            tp = m.get("top_provider") or {}
+            dp = m.get("default_parameters") or {}
+            sp = m.get("supported_parameters") or []
+            models.append({
+                "id": mid,
+                "name": m.get("name", ""),
+                "context_length": m.get("context_length"),
+                "max_completion_tokens": tp.get("max_completion_tokens"),
+                "default_temperature": dp.get("temperature"),
+                "default_top_p": dp.get("top_p"),
+                "supports_reasoning": any(
+                    k in sp for k in ("reasoning", "include_reasoning", "reasoning_effort")
+                ),
+                "reasoning": m.get("reasoning"),  # {mandatory, supported_efforts, default_effort}
+                "supported_parameters": sp,
+            })
+        models.sort(key=lambda m: m["id"])
+        return {"models": models, "count": len(models)}
 
     @app.post("/api/mirrors/test")
     def test_mirrors(body: dict):
@@ -401,6 +529,7 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
                     base_url=pc.get("base_url", "https://api.openai.com/v1"),
                     api_key=pc.get("api_key", ""),
                     model=pc.get("model", "gpt-4o-mini"),
+                    model_config=body.get("model_config") or {},
                 )
                 results = _translate_with_concurrency(
                     texts, provider, source, target, concurrency, matched=matched, use_glossary=True
@@ -430,7 +559,13 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
         target = body.get("target", ai_cfg.get("target_lang", "zh-CN"))
         engine = body.get("engine", ai_cfg.get("engine", "google"))
         categories = body.get("glossary_categories")
-        model_context = body.get("model_context") or ai_cfg.get("model_context")
+        model_config = body.get("model_config") or {}
+        # 分块上下文：模型级配置 → 请求级 → 全局默认（优先级从高到低）
+        model_context = (
+            model_config.get("model_context")
+            or body.get("model_context")
+            or ai_cfg.get("model_context")
+        )
 
         glossary = load_glossary(glossary_path)
         matched = match_terms(glossary, categories, texts)
@@ -445,6 +580,7 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
                     base_url=pc.get("base_url", "https://api.openai.com/v1"),
                     api_key=pc.get("api_key", ""),
                     model=pc.get("model", "gpt-4o-mini"),
+                    model_config=model_config,
                 )
             else:
                 raise HTTPException(400, f"未知引擎: {engine}")
@@ -461,29 +597,45 @@ def create_app(config_path: str = "config.yaml", glossary_path: str = "data/glos
                 offset += len(chunk)
 
             def event_stream():
-                yield f"data: {_json.dumps({'type': 'meta', 'total': total, 'chunks': len(chunks), 'matched_glossary': matched}, ensure_ascii=False)}\n\n"
+                # blocks：每块首行号（前端据此定位每行的块归属，用于流式增量/思考展示）
+                blocks = [line_offset[i] for i in range(len(chunks))]
+                yield f"data: {_json.dumps({'type': 'meta', 'total': total, 'chunks': len(chunks), 'blocks': blocks, 'matched_glossary': matched}, ensure_ascii=False)}\n\n"
                 done_lines = 0
                 # 逐块翻译；块内多行合并为一段（保留换行）
                 for ci, chunk in enumerate(chunks):
                     block_text = "\n".join(chunk)  # 合并为一段（行间换行）
                     base = line_offset[ci]
-                    for item in provider.translate_stream([block_text], source, target):
+                    stream_kwargs = {}
+                    if engine == "openai":
+                        stream_kwargs["glossary_entries"] = matched
+                    for item in provider.translate_stream([block_text], source, target, **stream_kwargs):
                         if item.get("type") in ("thinking", "content"):
-                            # 增量事件带全局行号（块内所有行）
-                            yield f"data: {_json.dumps({**item, 'block': ci}, ensure_ascii=False)}\n\n"
+                            # 增量事件 id 用块首行全局行号（前端按行展示流式内容/思考）
+                            yield f"data: {_json.dumps({**item, 'id': base, 'block': ci}, ensure_ascii=False)}\n\n"
                         elif item.get("type") == "done":
                             # 块完成：整块译文按行拆分回各原始行
-                            translation = item.get("translation", block_text)
-                            lines = translation.split("\n")
+                            # 优先用解析好的行列表（XML 每行一 item / JSON 按 \n 拆），
+                            # 行边界结构化后不会因换行漂移而错位。
+                            lines = item.get("translations")
+                            if lines is None:
+                                lines = item.get("translation", block_text).split("\n")
+                            # 行数对齐：少则补空行并标记（错位检测）
+                            if len(lines) != len(chunk):
+                                print(
+                                    f"[translate] 警告: 块 {ci} 译文行数 {len(lines)} ≠ 原文行数 {len(chunk)}，已补对齐",
+                                    flush=True,
+                                )
                             if len(lines) < len(chunk):
                                 lines += [""] * (len(chunk) - len(lines))
                             for j in range(len(chunk)):
                                 global_id = base + j
                                 done_payload = {
                                     "type": "done", "id": global_id,
+                                    "block_id": base,
                                     "translation": lines[j] if j < len(lines) else "",
                                     "uncertain_terms": item.get("uncertain_terms", []),
                                     "thinking": item.get("thinking"),
+                                    "error": item.get("error"),
                                 }
                                 yield f"data: {_json.dumps(done_payload, ensure_ascii=False)}\n\n"
                                 done_lines += 1

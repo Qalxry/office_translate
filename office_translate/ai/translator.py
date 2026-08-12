@@ -18,6 +18,14 @@ from .provider import OpenAICompatProvider, Provider, ProviderError
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 _JSON_OBJ = re.compile(r"\{.*\}", re.DOTALL)
 
+# XML 标签匹配（response_format 全不支持时的兜底输出格式）
+# 每行一个 <item>，行边界由标签决定（内容里的换行不影响对齐）；
+# <uncertain> 块独立于正文，与行对齐隔离。
+_XML_RESULT = re.compile(r"<translation_result>(.*?)</translation_result>", re.DOTALL)
+_XML_ITEM = re.compile(r"<item>(.*?)</item>", re.DOTALL)
+_XML_TERM = re.compile(r"<uncertain>\s*(.*?)\s*</uncertain>", re.DOTALL)
+_XML_FIELD = re.compile(r"<(term|reason|candidate)>(.*?)</\1>", re.DOTALL)
+
 # 不确定术语的 JSON Schema（用于 response_format 约束模型输出）
 TRANSLATION_SCHEMA = {
     "type": "object",
@@ -52,6 +60,31 @@ _SYSTEM_TMPL = (
     "- Keep the original structure, line breaks, and formatting."
 )
 
+# XML 兜底模板：response_format 全不支持的端点（deepseek-reasoner / Ollama 等）。
+# 每行一个 <item>：行边界由标签决定，模型少打/多打换行都不影响对齐；
+# <uncertain> 独立于正文，与行对齐隔离（一条术语的增删不影响映射）。
+_SYSTEM_TMPL_XML = (
+    "You are a professional translation engine. Translate the following text "
+    "from {source} to {target}.\n"
+    "{glossary}"
+    "\n"
+    "Rules:\n"
+    "- Output MUST use XML tags with EXACTLY this structure:\n"
+    "  <translation_result>\n"
+    "    <item>translation of the first input line</item>\n"
+    "    <item>translation of the second input line</item>\n"
+    "    <uncertain>\n"
+    "      <term>a term you are not confident about</term>\n"
+    "      <reason>why you are unsure</reason>\n"
+    "      <candidate>suggested translation</candidate>\n"
+    "    </uncertain>\n"
+    "  </translation_result>\n"
+    "- Each input line MUST be translated to EXACTLY ONE <item>, in the same order. "
+    "Never merge or split lines. One <item> per input line, no more, no less.\n"
+    "- If fully confident, output no <uncertain> block at all.\n"
+    "- If the translated text contains < or & characters, write &lt; and &amp;."
+)
+
 
 def _extract_json(text: str) -> Optional[dict[str, Any]]:
     """从模型输出中提取 JSON 对象；失败返回 None。"""
@@ -69,20 +102,17 @@ def _extract_json(text: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def _parse_result(content: str) -> dict[str, Any]:
-    """解析模型输出为 {translation, uncertain_terms}；无法解析时降级为纯文本。"""
-    obj = _extract_json(content)
-    if not obj:
-        return {"translation": content.strip(), "uncertain_terms": []}
-    translation = obj.get("translation")
-    if not isinstance(translation, str):
-        # JSON 但缺 translation 字段 → 降级为整段原文
-        return {"translation": content.strip(), "uncertain_terms": []}
-    terms = obj.get("uncertain_terms", [])
-    if not isinstance(terms, list):
-        terms = []
+def _xml_unescape(s: str) -> str:
+    """反转义 XML 实体（&lt; &amp; 等）。"""
+    import html as _html
+
+    return _html.unescape(s)
+
+
+def _clean_terms(raw: list) -> list[dict[str, str]]:
+    """清洗不确定术语列表（JSON 或 XML 解析后统一结构）。"""
     cleaned = []
-    for t in terms:
+    for t in raw:
         if isinstance(t, dict) and t.get("term"):
             cleaned.append(
                 {
@@ -91,7 +121,48 @@ def _parse_result(content: str) -> dict[str, Any]:
                     "candidate": str(t.get("candidate", "")).strip(),
                 }
             )
-    return {"translation": translation, "uncertain_terms": cleaned}
+    return cleaned
+
+
+def _parse_result(content: str) -> dict[str, Any]:
+    """解析模型输出为 {translations: list[str], uncertain_terms: list[dict]}。
+
+    translations 是逐行列表（行边界结构化，杜绝换行错位）：
+    - JSON（json_schema / json_object）：translation 字符串按 \\n 拆分（JSON 内 \\n 是转义，安全）
+    - XML（无 response_format 兜底）：每个 <item> 一行，行边界由标签决定
+    - 纯文本：按换行切分
+    """
+    obj = _extract_json(content)
+    if obj:
+        translation = obj.get("translation")
+        if isinstance(translation, str):
+            terms = obj.get("uncertain_terms", [])
+            if not isinstance(terms, list):
+                terms = []
+            return {
+                "translations": translation.split("\n"),
+                "uncertain_terms": _clean_terms(terms),
+            }
+    # XML 标签兜底：每行一个 <item>，<uncertain> 块独立
+    m = _XML_RESULT.search(content)
+    if m:
+        body = m.group(1)
+        translations = [_xml_unescape(t.strip()) for t in _XML_ITEM.findall(body)]
+        cleaned = []
+        for seg in _XML_TERM.findall(body):
+            fields: dict[str, str] = {}
+            for fm in _XML_FIELD.finditer(seg):
+                fields[fm.group(1)] = _xml_unescape(fm.group(2).strip())
+            if fields.get("term"):
+                cleaned.append(
+                    {
+                        "term": fields.get("term", ""),
+                        "reason": fields.get("reason", ""),
+                        "candidate": fields.get("candidate", ""),
+                    }
+                )
+        return {"translations": translations, "uncertain_terms": cleaned}
+    return {"translations": content.split("\n"), "uncertain_terms": []}
 
 
 def translate_batch(
@@ -120,7 +191,13 @@ def translate_batch(
             if isinstance(provider, OpenAICompatProvider):
                 content = provider._chat_with_glossary(text, source, target, format_glossary_prompt(glossary_entries))
                 parsed = _parse_result(content)
-                results.append({"id": i, "translation": parsed["translation"], "uncertain_terms": parsed["uncertain_terms"]})
+                results.append(
+                    {
+                        "id": i,
+                        "translation": "\n".join(parsed["translations"]),
+                        "uncertain_terms": parsed["uncertain_terms"],
+                    }
+                )
             else:
                 translation = provider.translate(text, source, target)
                 results.append({"id": i, "translation": translation, "uncertain_terms": []})

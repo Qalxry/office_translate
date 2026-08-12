@@ -32,7 +32,7 @@ body {
 /* 无任何渐变：全部扁平纯色 */
 
 /* ===== 布局 ===== */
-.app { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+.app { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; }
 header { display:flex; align-items:baseline; gap:10px; margin-bottom:24px; }
 header h1 { font-size:20px; font-weight:600; letter-spacing:.5px; }
 header .sub { color:var(--text-dim); font-size:13px; }
@@ -139,6 +139,72 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
 /* 思考过程块 */
 .thinking-block { background: var(--bg); border-left: 2px solid var(--warn); padding: 6px 10px; border-radius: 4px; }
 
+/* ===== 翻译工作区（APP 式布局：固定高度 + 内部滚动） ===== */
+.translate-workspace {
+  display: flex; gap: 12px; align-items: stretch;
+  margin-top: 14px;
+  height: 440px;
+}
+.map-list {
+  flex: 1; min-width: 0;
+  overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card);
+}
+.map-list::-webkit-scrollbar, .term-panel::-webkit-scrollbar { width: 8px; }
+.map-list::-webkit-scrollbar-thumb, .term-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.map-list::-webkit-scrollbar-thumb:hover, .term-panel::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+.map-item { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.map-item:last-child { border-bottom: none; }
+.map-item .row-num { font-size: 11px; color: var(--text-dim); margin-right: 6px; flex-shrink: 0; }
+.map-item .src { font-size: 13px; color: var(--text-dim); white-space: pre-wrap; }
+.map-item .tgt { font-size: 14px; white-space: pre-wrap; margin-top: 4px; cursor: text; }
+.map-item .tgt.editing { cursor: auto; }
+.map-item .tgt-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; }
+.map-item .tgt-row .tgt { flex: 1; min-width: 0; margin-top: 0; }
+.map-item .tgt-row .tgt.placeholder { color: var(--text-dim); }
+.map-item .tgt-row .btn { flex-shrink: 0; margin-top: 1px; }
+.map-item.translating { background: #fdfcf7; }
+.map-item.filtered { background: var(--accent-soft); }
+.map-item .caret { color: var(--accent); animation: blink 1s step-start infinite; }
+
+/* 思考过程面板（每次思考 append，可折叠） */
+.thinking-panel { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.thinking-panel > summary { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--warn); font-weight: 600; user-select: none; }
+.thinking-panel .t-body { max-height: 220px; overflow-y: auto; padding: 6px 14px 10px; }
+.thinking-panel .thinking-block { margin: 0 0 8px; }
+.thinking-panel .t-title { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+
+/* 右侧：不确定术语聚合面板 */
+.term-panel {
+  width: 250px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); overflow-y: auto; padding: 10px;
+}
+.term-panel h4 { font-size: 13px; margin-bottom: 8px; color: var(--text-dim); }
+.term-item {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 6px; cursor: pointer; transition: border-color .15s;
+}
+.term-item:hover { border-color: var(--accent); }
+.term-item.active { border-color: var(--accent); background: var(--accent-soft); }
+.term-item .term { font-weight: 600; font-size: 13px; }
+.term-item .rows { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.term-item .rows.warn { color: var(--warn); }
+
+/* ===== 模型行（摘要 + 点击展开） ===== */
+.model-row { border:1px solid var(--border); border-radius:var(--radius); margin-bottom:6px; overflow:hidden; }
+.model-row.active { border-color:var(--accent); }
+.model-row-head {
+  display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
+  background:var(--card); user-select:none;
+}
+.model-row-head:hover { background:#fafbfc; }
+.model-row.active .model-row-head { background:var(--accent-soft); }
+.model-arrow { font-size:11px; color:var(--text-dim); width:12px; text-align:center; flex-shrink:0; }
+.model-summary { font-size:11px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.model-actions { margin-left:auto; display:flex; gap:4px; flex-shrink:0; }
+.model-detail { padding:0 10px 10px; border-top:1px dashed var(--border); background:var(--card); }
+
 /* ===== toast ===== */
 #toast {
   position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
@@ -238,13 +304,105 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
               <label>API Key</label>
               <input :value="p.api_key" type="password" @change="updateProvider(key, 'api_key', $event.target.value)" placeholder="sk-...">
             </div>
-            <div class="row" style="margin-bottom:0;">
-              <label>模型（每行一个）</label>
-              <textarea :value="p.models.join('\n')" rows="2" @change="updateProviderModels(key, $event.target.value)" style="font-family:monospace;min-height:40px;"></textarea>
+            <!-- 模型列表：model_configs 键驱动，摘要行 + 点击展开，默认只展开当前使用模型 -->
+            <div class="row" style="margin-bottom:6px;">
+              <label>模型</label>
+              <div v-if="providerModelNames(key).length">
+                <div v-for="m in providerModelNames(key)" :key="key + '/' + m" class="model-row" :class="{active: key === activeProviderKey && m === activeModel}">
+                  <div class="model-row-head" @click="toggleExpand(key, m)">
+                    <span class="model-arrow">{{ isExpanded(key, m) ? '▾' : '▸' }}</span>
+                    <strong style="font-size:13px;">{{ m }}</strong>
+                    <span class="tag green" v-if="key === activeProviderKey && m === activeModel">使用中</span>
+                    <span class="model-summary">{{ modelSummary(key, m) }}</span>
+                    <span class="model-actions" @click.stop>
+                      <button class="btn sm" @click="setActiveModelFor(key, m)" :disabled="key === activeProviderKey && m === activeModel">设为使用</button>
+                      <button class="btn sm" @click="applyOpenRouterToModel(key, m)">OpenRouter 填充</button>
+                      <button class="btn sm danger" @click="removeModel(key, m)">删除</button>
+                    </span>
+                  </div>
+                  <div v-if="isExpanded(key, m)" class="model-detail">
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                    <div style="flex:1;min-width:90px;">
+                      <label style="font-size:11px;">上下文 (token)</label>
+                      <input :value="modelConfigValue(key, m, 'model_context', '')" type="number" min="1000" step="1000" @change="updateModelConfig(key, m, 'model_context', $event.target.value, 'number')" placeholder="如 128000（≥1000 的整数）">
+                    </div>
+                    <div style="flex:1;min-width:70px;">
+                      <label style="font-size:11px;">温度</label>
+                      <input :value="modelConfigValue(key, m, 'temperature', '')" type="number" min="0" max="2" step="0.1" @change="updateModelConfig(key, m, 'temperature', $event.target.value, 'number')" placeholder="如 0.6（0-2 小数）">
+                    </div>
+                    <div style="flex:1;min-width:80px;">
+                      <label style="font-size:11px;">输出上限 (token)</label>
+                      <input :value="modelConfigValue(key, m, 'max_tokens', '')" type="number" min="1" step="512" @change="updateModelConfig(key, m, 'max_tokens', $event.target.value, 'number')" placeholder="如 8192（≥1 的整数）">
+                    </div>
+                    <div style="flex:1;min-width:70px;">
+                      <label style="font-size:11px;">top_p</label>
+                      <input :value="modelConfigValue(key, m, 'top_p', '')" type="number" min="0" max="1" step="0.05" @change="updateModelConfig(key, m, 'top_p', $event.target.value, 'number')" placeholder="如 1（0-1 小数）">
+                    </div>
+                    <div style="flex:1;min-width:70px;">
+                      <label style="font-size:11px;">top_k</label>
+                      <input :value="modelConfigValue(key, m, 'top_k', '')" type="number" min="1" step="1" @change="updateModelConfig(key, m, 'top_k', $event.target.value, 'number')" placeholder="如 50（≥1 的整数）">
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                    <div style="flex:1;min-width:110px;">
+                      <label style="font-size:11px;">reasoning_effort</label>
+                      <select :value="modelConfigValue(key, m, 'reasoning_effort', '')" @change="updateModelConfig(key, m, 'reasoning_effort', $event.target.value, 'text')">
+                        <option value="">（默认）</option>
+                        <option v-for="lvl in modelEffortOptions(key, m)" :key="lvl" :value="lvl">{{ lvl }}</option>
+                      </select>
+                    </div>
+                    <div style="flex:1;min-width:110px;">
+                      <label style="font-size:11px;">thinking（DeepSeek 等）</label>
+                      <select :value="modelConfigValue(key, m, 'thinking', '')" @change="updateModelConfig(key, m, 'thinking', $event.target.value, 'thinking')">
+                        <option value="">（默认）</option>
+                        <option value="enabled">enabled</option>
+                        <option value="disabled">disabled</option>
+                      </select>
+                    </div>
+                    <div style="flex:1;min-width:130px;">
+                      <label style="font-size:11px;">输出格式（默认自动）</label>
+                      <select :value="modelConfigValue(key, m, 'response_format', '')" @change="updateModelConfig(key, m, 'response_format', $event.target.value, 'text')">
+                        <option value="">自动探测</option>
+                        <option value="json_schema">json_schema</option>
+                        <option value="json_object">json_object</option>
+                        <option value="none">无（XML 标签）</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="margin-top:6px;">
+                    <label style="font-size:11px;">其他参数（JSON，透传给 API，如 {"stop": [...]}）</label>
+                    <textarea :value="modelConfigExtra(key, m)" rows="1" @change="updateModelConfigExtra(key, m, $event.target.value)" placeholder='如 {"stop": ["###"], "frequency_penalty": 0}' style="font-size:12px;min-height:28px;font-family:monospace;"></textarea>
+                  </div>
+                  </div><!-- /model-detail -->
+                </div><!-- /model-row -->
+              </div>
+              <div v-else class="item-meta">暂无模型</div>
+              <div style="display:flex;gap:8px;margin-top:6px;">
+                <button class="btn sm primary" @click="addModel(key)">＋ 新增模型</button>
+                <button class="btn sm" @click="loadOpenRouter">☁ 从 OpenRouter 添加</button>
+              </div>
             </div>
           </div>
-          <div class="list-item" style="justify-content:center;">
+          <div class="list-item" style="justify-content:center;gap:8px;flex-wrap:wrap;">
             <button class="btn sm primary" @click="addProvider">＋ 新增供应商</button>
+            <button class="btn sm" @click="loadOpenRouter" :disabled="openrouterLoading">
+              {{ openrouterLoading ? '拉取中…' : '☁ 从 OpenRouter 拉取模型默认配置' }}
+            </button>
+          </div>
+          <!-- OpenRouter 模型选择面板 -->
+          <div v-if="openrouterModels.length" style="margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <strong style="font-size:13px;">OpenRouter 模型（{{ openrouterModels.length }}）</strong>
+              <span class="item-meta">点击「应用」把模型加入当前供应商，并自动填入上下文长度</span>
+              <button class="btn sm" style="margin-left:auto;" @click="openrouterModels = []">关闭</button>
+            </div>
+            <div style="max-height:240px;overflow-y:auto;">
+              <div v-for="om in openrouterModels" :key="om.id" style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border);font-size:13px;">
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="om.id">{{ om.id }}</span>
+                <span class="item-meta">{{ om.context_length ? (om.context_length / 1000).toFixed(0) + 'k' : '?' }}</span>
+                <button class="btn sm" :disabled="!activeProviderKey" @click="applyOpenRouterModel(om)">应用</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -374,28 +532,61 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <!-- 翻译模式 Tab -->
       <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:8px;">
         <button class="btn sm" :class="{primary: translateMode === 'ai'}" @click="translateMode = 'ai'">AI 翻译</button>
-        <button class="btn sm" :class="{primary: translateMode === 'manual'}" @click="translateMode = 'manual'">手动翻译</button>
+        <button class="btn sm" :class="{primary: translateMode === 'manual'}" @click="switchToManual">手动翻译</button>
       </div>
       <div v-if="translateMode === 'manual'">
-        <p class="desc">逐条编辑译文（与原文一一对应），编辑会实时同步到下方文本框。</p>
-        <p class="hint" style="margin-bottom:10px;">「预览翻译映射结果」会加载已保存的译文（如有），并按行展示原文↔译文对照。<br>所有条目标记后点「保存并进入下一步」；行数必须与原文一致（会自动校验）。</p>
-        <!-- 映射列表（每条可单独编辑） -->
-        <div v-if="manualMappings.length" class="list" style="margin-bottom:12px;">
-          <div v-for="(m, i) in manualMappings" :key="i" style="padding:10px 14px;border-bottom:1px solid var(--border);">
-            <div class="item-meta" style="margin-bottom:4px;">#{{ i }} 原文</div>
-            <div class="item-title" style="margin-bottom:6px;white-space:pre-wrap;">{{ m.source }}</div>
-            <div class="item-meta" style="margin-bottom:4px;">译文</div>
-            <input v-model="m.target" @input="syncMappingToText(i)" placeholder="输入译文…" style="font-size:13px;">
-          </div>
-          <div v-if="!manualMappings.length" class="empty">暂无映射，先「预览翻译映射结果」或输入译文</div>
+        <p class="desc">复制原文 → 用外部网页 AI 翻译 → 粘贴译文回来，无需 API 也能享受 AI 翻译。</p>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button class="btn" @click="copySource" :disabled="!sourceTexts.length">📋 复制原文</button>
+          <span class="item-meta" style="align-self:center;">共 {{ sourceTexts.length }} 行，粘贴译文时每行一条</span>
         </div>
         <div class="row">
-          <label>译文文本（每行一条，自动同步）</label>
-          <textarea v-model="manualTranslations" rows="6" style="font-family:monospace;" @input="syncTextToMappings"></textarea>
+          <label>译文文本（粘贴区：外部 AI 输出的译文直接粘贴，每行一条）</label>
+          <textarea v-model="manualTranslations" rows="6" style="font-family:monospace;" placeholder="把网页端 AI 翻译的结果粘贴到这里，每行对应一行原文…"></textarea>
+          <!-- 行数实时校验：严格按行比对，列出缺译文的行号 -->
+          <p v-if="manualLineStatus.count > 0" class="hint" :class="{warn: manualLineStatus.diff !== 0}">
+            已粘贴 {{ manualLineStatus.count }} 行 / 原文 {{ manualLineStatus.expected }} 行
+            <template v-if="manualLineStatus.diff === 0">✓ 行数一致</template>
+            <template v-else-if="manualLineStatus.diff > 0">（多了 {{ manualLineStatus.diff }} 行，请核对）</template>
+            <template v-else>⚠ 缺少 {{ -manualLineStatus.diff }} 行译文：{{ manualLineStatus.missing }}</template>
+          </p>
+        </div>
+        <!-- 已保存译文预览（只读对照，不影响粘贴区） -->
+        <div v-if="showManualPreview" class="card" style="background:var(--bg);padding:12px;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <strong style="font-size:13px;">已保存译文预览</strong>
+            <button class="btn sm" style="margin-left:auto;" @click="showManualPreview = false">关闭</button>
+          </div>
+          <div class="list scroll-area" style="max-height:240px;">
+            <div v-for="(p, i) in manualPreview" :key="'prev' + i" class="map-item" style="padding:8px 12px;">
+              <div style="display:flex;align-items:baseline;">
+                <span class="row-num">#{{ i + 1 }}</span>
+                <span class="src">{{ p.source }}</span>
+              </div>
+              <div class="tgt" style="margin-top:2px;">{{ p.target || '（未填写）' }}</div>
+            </div>
+          </div>
+        </div>
+        <!-- 逐行修正视图：从译文文本派生，编辑单向写回文本 -->
+        <div v-if="manualMappings.length" class="list scroll-area" style="margin-bottom:12px;max-height:360px;">
+          <div v-for="(m, i) in manualMappings" :key="i" class="map-item" style="padding:10px 14px;">
+            <div style="display:flex;align-items:baseline;">
+              <span class="row-num">#{{ i + 1 }}</span>
+              <span class="src">{{ m.source }}</span>
+            </div>
+            <div v-if="editingManualRow === i" class="tgt editing" style="margin-top:4px;">
+              <textarea :value="m.target" @blur="saveManualRow(i, $event)" @input="autosizeRow($event)" ref="manualEditor" rows="2" style="width:100%;border:1px solid var(--accent);padding:6px 8px;background:#fff;resize:vertical;font-size:14px;font-family:inherit;"></textarea>
+            </div>
+            <div v-else class="tgt-row" style="margin-top:4px;">
+              <span class="tgt" :class="{placeholder: !m.target}">{{ m.target || '（未填写）' }}</span>
+              <button class="btn sm" @click="startManualEdit(i)" title="编辑译文">✎</button>
+            </div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="btn primary" @click="saveManualTranslations" :disabled="!currentJob || !manualTranslations.trim()">保存并进入下一步</button>
-          <button class="btn" @click="loadManualFromFile" :disabled="!currentJob">预览翻译映射结果</button>
+          <button class="btn primary" @click="saveManualTranslations" :disabled="!currentJob || manualLineStatus.diff !== 0">保存并进入下一步</button>
+          <button class="btn" @click="previewManual" :disabled="!currentJob">预览翻译映射结果</button>
+          <button class="btn" @click="loadManualStart" :disabled="!currentJob">覆盖为已有译文</button>
         </div>
       </div>
       <div v-else>
@@ -417,7 +608,7 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         </div>
         <div v-if="engine === 'openai'">
           <label>模型</label>
-          <select v-model="activeModel">
+          <select :value="activeModel" @change="changeModel($event.target.value)">
             <option v-for="m in activeProviderModels" :key="m" :value="m">{{ m }}</option>
           </select>
           <p class="hint">DeepSeek 用 deepseek-reasoner 可看到思考过程。</p>
@@ -436,7 +627,21 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <button class="btn primary" @click="doTranslate" :disabled="!currentJob || translating">
         {{ translating ? '翻译中…' : '开始翻译' }}
       </button>
-      <p class="hint">翻译过程实时显示：进度条按行更新，译文逐条出现；有思考能力的模型会显示思考过程。可随时在下方看到已完成的译文。</p>
+      <p class="hint">翻译过程实时显示：进度条按行更新，译文逐条填充到下方对照区；有思考能力的模型会把思考过程追加到上方折叠面板。<br>右侧列出模型自报的不确定术语，点击术语只显示受它影响的行；译文行点击可直接编辑。</p>
+      <!-- 思考过程区（每次思考 append，可折叠；翻译中自动展开） -->
+      <details v-if="translateBlocks.length || (translating && Object.keys(translateThinking).length)" class="thinking-panel" :open="translating">
+        <summary>🧠 思考过程（{{ thinkingCount }} 次）</summary>
+        <div class="t-body">
+          <div v-for="b in translateBlocks" :key="'tb' + b.base" class="thinking-block">
+            <div class="t-title">块 {{ b.base + 1 }} 起 · {{ b.text.length }} 字</div>
+            <div class="item-meta" style="white-space:pre-wrap;font-size:12px;">{{ b.text }}</div>
+          </div>
+          <div v-if="translating && activeThinkingText" class="thinking-block">
+            <div class="t-title">思考中…</div>
+            <div class="item-meta" style="white-space:pre-wrap;font-size:12px;">{{ activeThinkingText }}</div>
+          </div>
+        </div>
+      </details>
       <!-- 流式进度条（按已完成行数/总行数） -->
       <div v-if="translating" class="progress-bar" style="margin-top:14px;">
         <div class="fill" :style="{width: translateProgress + '%'}"></div>
@@ -444,28 +649,38 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div v-if="translating && translateTotal" class="item-meta" style="margin-top:6px;text-align:center;">
         已翻译 {{ translateDone }} / {{ translateTotal }} 行（{{ translateProgress }}%）
       </div>
-      <!-- 流式结果列表（可滚动） -->
-      <div v-if="translating && (translateResults.length || Object.keys(translateThinking).length || Object.keys(translateBuffer).length)" class="list scroll-area" style="margin-top:16px;">
-        <!-- 当前正在翻译的条目（流式） -->
-        <div v-for="(buf, id) in translateBuffer" :key="'buf' + id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
-          <div class="item-meta">#{{ id }} 翻译中…</div>
-          <div class="item-title" style="white-space:pre-wrap;">{{ buf }}<span class="caret">▋</span></div>
-          <div v-if="translateThinking[id]" class="thinking-block">
-            <div class="item-meta" style="color:var(--warn);">思考中…</div>
-            <div class="item-meta" style="white-space:pre-wrap;font-size:12px;">{{ translateThinking[id] }}</div>
+      <!-- 翻译工作区：左 原文↔译文逐行对照（固定高度滚动） | 右 不确定术语 -->
+      <div v-if="translateSources.length" class="translate-workspace">
+        <div class="map-list">
+          <!-- 翻译中：只显示已开始的行（实时 append，不一开始全列） -->
+          <div v-for="row in visibleTranslateRows" :key="row.id" class="map-item" :class="{translating: translating && row.buffer !== undefined, filtered: selectedTermFilter && !translating}">
+            <div style="display:flex;align-items:baseline;">
+              <span class="row-num">#{{ row.id + 1 }}</span>
+              <span class="src">{{ row.source }}</span>
+            </div>
+            <div v-if="row.buffer !== undefined" class="tgt">{{ row.buffer }}<span class="caret">▋</span></div>
+            <div v-if="editingRow === row.id" class="tgt editing">
+              <textarea :value="row.translation" @blur="saveEdit(row.id, $event)" @input="autosizeRow($event)" ref="rowEditor" rows="2" style="width:100%;border:1px solid var(--accent);padding:6px 8px;background:#fff;resize:vertical;font-size:14px;font-family:inherit;"></textarea>
+            </div>
+            <div v-else class="tgt-row">
+              <span class="tgt" :class="{placeholder: !row.translation}">{{ row.translation || '（未翻译）' }}</span>
+              <button class="btn sm" @click="startEdit(row.id)" title="编辑译文">✎</button>
+            </div>
+            <div v-if="row.uncertain.length" class="item-meta" style="margin-top:2px;">⚠ 不确定：{{ row.uncertain.map(t => t.term).join('、') }}</div>
           </div>
+          <div v-if="!filteredTranslateRows.length" class="empty">没有可显示的行</div>
         </div>
-        <!-- 已完成的条目 -->
-        <div v-for="r in translateResults" :key="'r' + r.id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
-          <div class="item-title" style="white-space:pre-wrap;">{{ r.translation }}</div>
-          <div class="item-meta" v-if="r.uncertain_terms.length">⚠ 不确定：{{ r.uncertain_terms.length }} 个术语</div>
-        </div>
-      </div>
-      <!-- 翻译完成后的结果 -->
-      <div v-if="!translating && translateResults.length" class="list" style="margin-top:16px;">
-        <div v-for="r in translateResults" :key="r.id" class="list-item" style="flex-direction:column;align-items:stretch;gap:4px;">
-          <div class="item-title" style="white-space:pre-wrap;">{{ r.translation }}</div>
-          <div class="item-meta" v-if="r.uncertain_terms.length">⚠ 不确定：{{ r.uncertain_terms.length }} 个术语</div>
+        <!-- 右侧：不确定术语聚合（含影响行，点击筛选左侧） -->
+        <div class="term-panel">
+          <h4>不确定术语（{{ termAggregates.length }}）</h4>
+          <div v-if="termAggregates.length">
+            <div v-for="t in termAggregates" :key="t.term" class="term-item" :class="{active: selectedTermFilter === t.term}" @click="toggleTermFilter(t.term)">
+              <div class="term">{{ t.term }}</div>
+              <div class="rows">影响行：{{ t.rows.map(r => r + 1).join(', ') }}</div>
+              <div v-if="t.candidate" class="rows warn">建议：{{ t.candidate }}</div>
+            </div>
+          </div>
+          <div v-else class="empty" style="padding:16px 0;">暂无不确定术语</div>
         </div>
       </div>
       </div><!-- /AI tab -->
@@ -557,6 +772,10 @@ createApp({
       translateMode: 'ai',
       manualTranslations: '',
       manualMappings: [],
+      editingManualRow: null,
+      manualLoadedOnce: false,
+      manualPreview: [],
+      showManualPreview: false,
       engine: 'google',
       activeProviderKey: 'openai',
       activeModel: 'gpt-4o-mini',
@@ -569,6 +788,12 @@ createApp({
       translateThinking: {},
       translateBuffer: {},
       translateResults: [],
+      translateSources: [],       // 待译原文（与 translateResults 按 id 对应）
+      translateBlocksList: [],    // 每块首行号（meta 下发）
+      translateBlocks: [],        // 已完成的思考块 [{base, text}]
+      translateBlockSaved: new Set(),
+      selectedTermFilter: null,   // 右侧术语筛选（null=全部）
+      editingRow: null,           // 正在编辑译文的行 id
       glossaryCategories: [],
       selectedCategories: [],
       pendingTerms: [],
@@ -589,6 +814,10 @@ createApp({
       customMirrors: null,
       testingMirrors: false,
       mirrorTestResults: [],
+      // OpenRouter 模型拉取
+      openrouterLoading: false,
+      openrouterModels: [],
+      expandedModel: '',  // "providerKey/modelName"，当前展开的模型（默认收起）
     };
   },
   computed: {
@@ -598,9 +827,93 @@ createApp({
       const filtered = this.glossaryCategoryFilter ? [this.glossaryCategoryFilter] : names;
       return filtered.filter(n => cats[n]).map(name => ({name, entries: cats[name]}));
     },
+    // 当前供应商的模型列表（由 model_configs 键驱动）
     activeProviderModels() {
-      const p = this.settings.ai.providers[this.activeProviderKey];
-      return (p && p.models && p.models.length) ? p.models : ['gpt-4o-mini'];
+      return this.providerModelNames(this.activeProviderKey);
+    },
+    // 手动翻译：映射从译文文本派生（大文本框是唯一真相源，列表是修正视图）
+    manualMappings() {
+      const targets = this.manualTranslations.split('\n');
+      return this.sourceTexts.map((src, i) => ({source: src, target: targets[i] || ''}));
+    },
+    // 手动翻译行数校验：严格按行比对，缺的行号列出
+    manualLineStatus() {
+      const lines = this.manualTranslations === '' ? [] : this.manualTranslations.split('\n');
+      const expected = this.sourceTexts.length;
+      const count = lines.length;
+      const diff = count - expected;
+      let missing = '';
+      if (diff < 0) {
+        const missingRows = [];
+        for (let i = 0; i < expected; i++) {
+          if (i >= count || (lines[i] || '').trim() === '') missingRows.push(i + 1);
+        }
+        missing = missingRows.join('、');
+      }
+      return {count, expected, diff, missing};
+    },
+    // 逐行对照映射：原文 + 译文（翻译中显示所在块的流式增量）
+    translateRows() {
+      const blocks = this.translateBlocksList || [];
+      const blockOf = (i) => { let b = 0; for (const x of blocks) { if (x > i) break; b = x; } return b; };
+      return this.translateSources.map((src, i) => {
+        const r = this.translateResults.find(x => x.id === i);
+        const base = blockOf(i);
+        return {
+          id: i,
+          source: src,
+          translation: r ? r.translation : '',
+          uncertain: r ? (r.uncertain_terms || []) : [],
+          buffer: this.translating && this.translateBuffer[base] !== undefined ? this.translateBuffer[base] : undefined,
+        };
+      });
+    },
+    // 翻译中实时 append 的行（已开始的行：翻译中 + done + buffer），完成后显示全部
+    visibleTranslateRows() {
+      if (!this.translating) return this.filteredTranslateRows;
+      const rows = this.translateRows;
+      const doneCount = this.translateDone || 0;
+      const bufferBases = Object.keys(this.translateBuffer).map(Number);
+      const inProgress = rows.filter(r => r.buffer !== undefined);
+      const visible = [];
+      const seen = new Set();
+      for (const r of inProgress) { visible.push(r); seen.add(r.id); }
+      // 已完成的按 id 追加（保持顺序）
+      for (let i = 0; i < doneCount; i++) {
+        if (!seen.has(i)) { const r = rows[i]; if (r) { visible.push(r); seen.add(i); } }
+      }
+      // 术语筛选时只保留匹配的
+      if (this.selectedTermFilter) {
+        return visible.filter(r => r.uncertain.some(t => t.term === this.selectedTermFilter));
+      }
+      return visible;
+    },
+    // 术语筛选后的行
+    filteredTranslateRows() {
+      if (!this.selectedTermFilter) return this.translateRows;
+      return this.translateRows.filter(r => r.uncertain.some(t => t.term === this.selectedTermFilter));
+    },
+    // 不确定术语聚合：term → {term, reason, candidate, rows}
+    termAggregates() {
+      const map = {};
+      for (const r of this.translateResults) {
+        for (const t of (r.uncertain_terms || [])) {
+          if (!t.term) continue;
+          if (!map[t.term]) map[t.term] = {term: t.term, reason: t.reason, candidate: t.candidate, rows: []};
+          map[t.term].rows.push(r.id);
+        }
+      }
+      return Object.values(map)
+        .map(v => ({...v, count: v.rows.length}))
+        .sort((a, b) => b.count - a.count);
+    },
+    // 翻译中正在思考的块（thinking 增量实时显示）
+    activeThinkingText() {
+      const keys = Object.keys(this.translateThinking);
+      return keys.length ? this.translateThinking[keys[keys.length - 1]] : '';
+    },
+    thinkingCount() {
+      return this.translateBlocks.length + (this.translating && this.activeThinkingText ? 1 : 0);
     },
     applyDownloads() {
       if (!this.applyInfo) return [];
@@ -725,7 +1038,13 @@ createApp({
         this.activeProviderKey = this.settings.ai.active_provider || 'openai';
         this.engine = this.settings.ai.engine || 'google';
         const p = this.settings.ai.providers[this.activeProviderKey];
-        if (p && p.models && p.models.length) this.activeModel = p.models[0];
+        const names = this.providerModelNames(this.activeProviderKey);
+        if (names.length) {
+          // 记住上次选的模型（存于 ai.active_model），否则用第一个
+          const last = this.settings.ai.active_model;
+          this.activeModel = (last && names.includes(last)) ? last : names[0];
+          this.expandedModel = this.activeProviderKey + '/' + this.activeModel;
+        }
       } catch (e) { this.toast('加载设置失败'); }
     },
     async saveSettings() {
@@ -742,17 +1061,89 @@ createApp({
       p[field] = value;
       await this.saveSettings();
     },
-    async updateProviderModels(key, text) {
+    // ---------- 模型行（摘要 + 展开） ----------
+    providerModelNames(key) {
       const p = this.settings.ai.providers[key];
-      if (!p) return;
-      p.models = text.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!p) return [];
+      p.model_configs = p.model_configs || {};
+      return Object.keys(p.model_configs);
+    },
+    isExpanded(key, m) {
+      return this.expandedModel === key + '/' + m;
+    },
+    toggleExpand(key, m) {
+      this.expandedModel = this.expandedModel === key + '/' + m ? '' : key + '/' + m;
+    },
+    modelSummary(key, m) {
+      const mc = this.modelConfigOf(key, m);
+      const parts = [];
+      if (mc.model_context) parts.push(Math.round(mc.model_context / 1000) + 'k');
+      if (mc.temperature != null) parts.push('temp ' + mc.temperature);
+      if (mc.max_tokens) parts.push('out ' + mc.max_tokens);
+      if (mc.thinking && mc.thinking.type === 'enabled') parts.push('思考');
+      if (mc.reasoning_effort) parts.push('effort ' + mc.reasoning_effort);
+      return parts.length ? parts.join(' · ') : '（未配置，点击展开设置）';
+    },
+    async setActiveModelFor(key, m) {
+      if (key !== this.activeProviderKey) {
+        this.settings.ai.active_provider = key;
+        this.activeProviderKey = key;
+      }
+      this.activeModel = m;
+      this.settings.ai.active_model = m;
       await this.saveSettings();
+    },
+    async addModel(key) {
+      const name = prompt('模型名（如 deepseek-chat）:', '');
+      if (!name || !name.trim()) return;
+      const p = this.settings.ai.providers[key];
+      p.model_configs = p.model_configs || {};
+      const n = name.trim();
+      if (p.model_configs[n]) { this.toast('模型已存在'); return; }
+      p.model_configs[n] = {model_context: 128000, temperature: 0.6};
+      this.unmarkRemoved(key, n);
+      if (key === this.activeProviderKey) {
+        this.settings.ai.active_model = n;
+        this.activeModel = n;
+      }
+      this.expandedModel = key + '/' + n;
+      await this.saveSettings();
+    },
+    async removeModel(key, m) {
+      if (!confirm(`删除模型「${m}」的配置？`)) return;
+      const p = this.settings.ai.providers[key];
+      if (p.model_configs) delete p.model_configs[m];
+      // 记录到 removed_models，防止 server 深合并把默认模型又加回来
+      p.removed_models = p.removed_models || [];
+      if (!p.removed_models.includes(m)) p.removed_models.push(m);
+      if (key === this.activeProviderKey && this.activeModel === m) {
+        const rest = Object.keys(p.model_configs || {});
+        this.activeModel = rest.length ? rest[0] : '';
+        this.settings.ai.active_model = this.activeModel;
+      }
+      if (this.expandedModel === key + '/' + m) this.expandedModel = '';
+      await this.saveSettings();
+      this.toast(`已删除模型「${m}」`);
+    },
+    unmarkRemoved(key, m) {
+      // 重新添加时清除删除标记
+      const p = this.settings.ai.providers[key];
+      if (p && p.removed_models) p.removed_models = p.removed_models.filter(x => x !== m);
     },
     async setActiveProvider(key) {
       this.settings.ai.active_provider = key;
       this.activeProviderKey = key;
-      const p = this.settings.ai.providers[key];
-      if (p && p.models && p.models.length) this.activeModel = p.models[0];
+      const names = this.providerModelNames(key);
+      if (names.length) {
+        this.activeModel = names[0];
+        this.expandedModel = key + '/' + names[0];
+      }
+      await this.saveSettings();
+    },
+    async changeModel(m) {
+      // 切换模型时记住选择，供下次打开恢复
+      this.activeModel = m;
+      this.settings.ai.active_model = m;
       await this.saveSettings();
     },
     async addProvider() {
@@ -761,9 +1152,136 @@ createApp({
       const key = 'custom' + Date.now();
       this.settings.ai.providers[key] = {
         name, base_url: 'https://api.openai.com/v1', api_key: '',
-        models: ['gpt-4o-mini'], default_model: 'gpt-4o-mini',
+        default_model: '',
+        model_configs: {},
       };
       await this.saveSettings();
+    },
+    // ---------- 模型级配置 ----------
+    modelConfigOf(key, m) {
+      const p = this.settings.ai.providers[key];
+      if (!p) return {};
+      p.model_configs = p.model_configs || {};
+      if (!p.model_configs[m]) p.model_configs[m] = {};
+      return p.model_configs[m];
+    },
+    modelConfigValue(key, m, field, fallback) {
+      const mc = this.modelConfigOf(key, m);
+      const v = mc[field];
+      if (v === undefined || v === null) return fallback;
+      // thinking 存的是 {type: "enabled"/"disabled"}，下拉需要字符串值
+      if (field === 'thinking' && typeof v === 'object') return v.type || fallback;
+      return v;
+    },
+    modelConfigExtra(key, m) {
+      const mc = this.modelConfigOf(key, m);
+      return mc.extra ? JSON.stringify(mc.extra, null, 0) : '';
+    },
+    async updateModelConfig(key, m, field, value, kind) {
+      const mc = this.modelConfigOf(key, m);
+      if (kind === 'number') {
+        const n = value === '' || value === null ? null : Number(value);
+        if (n !== null && (isNaN(n) || n < 0)) { this.toast('无效数值'); return; }
+        mc[field] = n;
+      } else if (field === 'thinking') {
+        mc[field] = value === '' ? undefined : {type: value};
+      } else {
+        mc[field] = value === '' ? undefined : value;
+      }
+      await this.saveSettings();
+    },
+    async updateModelConfigExtra(key, m, text) {
+      const mc = this.modelConfigOf(key, m);
+      const t = text.trim();
+      if (!t) { delete mc.extra; await this.saveSettings(); return; }
+      try { mc.extra = JSON.parse(t); }
+      catch (e) { this.toast('JSON 格式错误: ' + e.message); return; }
+      await this.saveSettings();
+    },
+    // ---------- OpenRouter ----------
+    async loadOpenRouter() {
+      this.openrouterLoading = true;
+      try {
+        const res = await this.api('/api/openrouter/models');
+        this.openrouterModels = res.models || [];
+        if (!this.openrouterModels.length) this.toast('OpenRouter 返回空列表');
+      } catch (e) { this.toast('拉取失败: ' + e.message); }
+      finally { this.openrouterLoading = false; }
+    },
+    async applyOpenRouterModel(om) {
+      // 把 OpenRouter 模型加入当前供应商（模型名取 id 去供应商前缀），填完整默认配置
+      const key = this.activeProviderKey;
+      const p = this.settings.ai.providers[key];
+      if (!p) return;
+      const modelName = om.id.includes('/') ? om.id.split('/').pop() : om.id;
+      p.model_configs = p.model_configs || {};
+      p.model_configs[modelName] = p.model_configs[modelName] || {};
+      this.unmarkRemoved(key, modelName);
+      this.fillModelFromOpenRouter(key, modelName, om);
+      this.settings.ai.active_model = modelName;
+      this.activeModel = modelName;
+      this.expandedModel = key + '/' + modelName;
+      await this.saveSettings();
+      const parts = [];
+      if (om.context_length) parts.push('上下文 ' + Math.round(om.context_length / 1000) + 'k');
+      if (om.max_completion_tokens) parts.push('输出上限 ' + om.max_completion_tokens);
+      if (om.supports_reasoning) parts.push('推理开启');
+      this.toast(`已应用 ${om.id}：${parts.join('，') || '（无可用元数据）'}`);
+    },
+    // 用 OpenRouter 模型元数据填充完整默认配置：按模型真实能力填满，不保守
+    fillModelFromOpenRouter(key, m, om) {
+      const mc = this.modelConfigOf(key, m);
+      // 上下文：模型真实能力
+      if (om.context_length) mc.model_context = om.context_length;
+      // 输出上限：OpenRouter 报告的 max_completion_tokens（若模型支持 max_tokens 请求参数）
+      if (om.max_completion_tokens) {
+        mc.max_tokens = om.max_completion_tokens;
+      }
+      // 默认温度（OpenRouter 报告的模型默认值）
+      if (om.default_temperature != null) mc.temperature = om.default_temperature;
+      // 推理：用 OpenRouter reasoning 元数据（supported_efforts / default_effort）
+      if (om.supports_reasoning) {
+        mc.thinking = {type: 'enabled'};
+      }
+      const r = om.reasoning;
+      if (r && typeof r === 'object') {
+        if (Array.isArray(r.supported_efforts) && r.supported_efforts.length) {
+          // 存支持级别（UI 下拉用，下划线前缀不传给 API）
+          mc._effort_options = r.supported_efforts;
+        }
+        if (r.default_effort) {
+          mc.reasoning_effort = r.default_effort;
+        }
+      }
+      return mc;
+    },
+    // 当前模型支持哪些 effort 级别（下拉选项）
+    modelEffortOptions(key, m) {
+      const mc = this.modelConfigOf(key, m);
+      return (mc._effort_options && mc._effort_options.length)
+        ? mc._effort_options
+        : ['low', 'medium', 'high', 'max'];
+    },
+    async applyOpenRouterToModel(key, m) {
+      // 单个模型：按名称匹配 OpenRouter 模型，填完整默认配置
+      // 若还没拉取过模型列表，先自动拉取
+      if (!this.openrouterModels.length) {
+        this.toast('正在拉取 OpenRouter 模型列表…');
+        await this.loadOpenRouter();
+        if (!this.openrouterModels.length) { this.toast('拉取失败，无法填充'); return; }
+      }
+      let found = this.openrouterModels.find(x => x.id.endsWith('/' + m) || x.id === m);
+      if (!found) {
+        this.toast(`OpenRouter 中未找到「${m}」`);
+        return;
+      }
+      this.fillModelFromOpenRouter(key, m, found);
+      await this.saveSettings();
+      const parts = [];
+      if (found.context_length) parts.push('上下文 ' + Math.round(found.context_length / 1000) + 'k');
+      if (found.max_completion_tokens) parts.push('输出上限 ' + found.max_completion_tokens);
+      if (found.supports_reasoning) parts.push('推理开启');
+      this.toast(`已用 OpenRouter 配置填充 ${m}：${parts.join('，')}`);
     },
     async removeProvider(key) {
       if (Object.keys(this.settings.ai.providers).length <= 1) {
@@ -782,8 +1300,11 @@ createApp({
       this.saveSettings();
     },
     onProviderChange() {
-      const p = this.settings.ai.providers[this.activeProviderKey];
-      if (p && p.models && p.models.length) this.activeModel = p.models[0];
+      const names = this.providerModelNames(this.activeProviderKey);
+      if (names.length) {
+        const last = this.settings.ai.active_model;
+        this.activeModel = (last && names.includes(last)) ? last : names[0];
+      }
     },
     async deleteCategory(name) {
       if (!confirm(`删除整个类别「${name}」及其 ${this.glossaryDetail.categories[name] ? this.glossaryDetail.categories[name].length : 0} 个术语？`)) return;
@@ -840,11 +1361,30 @@ createApp({
         this.step = 3;  // 已翻译 → 审核
       } else if (j.stages.includes('已提取')) {
         this.step = 2;  // 已提取 → 翻译
-        await this.loadSourcePreview();
       } else {
         this.step = 1;  // 待提取
       }
+      // 提取过就恢复原文预览（任何步骤都需要）
+      if (j.stages.includes('已提取')) {
+        await this.loadSourcePreview();
+      }
+      // 恢复已保存的 AI 输出（逐行译文/不确定术语/思考）
+      await this.restoreAiOutput();
       this.toast('已选择任务: ' + j.job);
+    },
+    async restoreAiOutput() {
+      try {
+        const d = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
+        if (d.results && d.results.length) {
+          this.translateResults = d.results;
+          this.translateBlocks = d.blocks || [];
+          this.translateBlocksList = (d.blocks || []).map(b => b.base);
+          this.translateSources = this.sourceTexts;
+          this.translatedTxt = d.results.map(r => r.translation).join('\n');
+          this.pendingTerms = this.collectTerms(d.results);
+          this.translated = true;
+        }
+      } catch (e) { /* 无保存输出则忽略 */ }
     },
     async doExtract() {
       this.extracting = true;
@@ -879,50 +1419,88 @@ createApp({
         this.toast('原文已复制');
       }
     },
-    async loadManualFromFile() {
-      // 加载已有译文 → 展示映射预览
+    async switchToManual() {
+      // 切到手动模式：若当前没有译文（或没加载过），自动加载已有译文作为起点
+      const hadLoaded = this.manualLoadedOnce;
+      this.translateMode = 'manual';
+      if (!hadLoaded) {
+        this.manualLoadedOnce = true;
+        await this.loadManualStart();
+      }
+    },
+    // 加载已有译文作为手动编辑起点（AI 结果优先，回退 translated.txt）
+    // 预览：读取已保存的译文（ai_output 优先，回退 translated.txt）作为只读对照，不覆盖粘贴区
+    async previewManual() {
       try {
-        const r = await this.api(`/api/jobs/${this.currentJob}/translated_file`);
-        if (r.text) {
-          this.manualTranslations = r.text.trimEnd();
-          this.toast('已加载译文，可逐条编辑');
+        const d = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
+        let savedText = null;
+        if (d.results && d.results.length) {
+          savedText = d.results.map(r => r.translation).join('\n');
         } else {
-          // 无译文：从原文生成空映射
-          await this.loadSourcePreview();
-          this.manualTranslations = '';
-          this.toast('尚无译文，可逐条填写');
+          const r = await this.api(`/api/jobs/${this.currentJob}/translated_file`);
+          if (r.text) savedText = r.text.trimEnd();
         }
-        this.refreshManualMappings();
+        if (savedText === null) { this.toast('还没有已保存的译文'); return; }
+        const lines = savedText.split('\n');
+        this.manualPreview = this.sourceTexts.map((src, i) => ({
+          source: src,
+          target: lines[i] || '',
+        }));
+        this.showManualPreview = true;
+        this.toast('已加载已保存译文（只读预览，不影响下方粘贴区）');
+      } catch (e) { this.toast('预览失败: ' + e.message); }
+    },
+    async loadManualStart() {
+      try {
+        const d = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
+        if (d.results && d.results.length) {
+          this.manualTranslations = d.results.map(r => r.translation).join('\n');
+          this.toast('已加载 AI 译文，可逐条修改');
+        } else {
+          const r = await this.api(`/api/jobs/${this.currentJob}/translated_file`);
+          this.manualTranslations = r.text ? r.text.trimEnd() : '';
+          this.toast(r.text ? '已加载已有译文' : '尚无译文，粘贴外部 AI 翻译结果');
+        }
       } catch (e) { this.toast('读取失败: ' + e.message); }
     },
-    refreshManualMappings() {
-      const targets = this.manualTranslations.split('\n');
-      this.manualMappings = this.sourceTexts.map((src, i) => ({
-        source: src,
-        target: targets[i] || '',
-      }));
-      this.manualTranslationLines = targets.length;
+    startManualEdit(i) {
+      this.editingManualRow = i;
+      this.$nextTick(() => {
+        const els = Array.isArray(this.$refs.manualEditor) ? this.$refs.manualEditor : [this.$refs.manualEditor];
+        els.forEach(e => { if (e) { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; } });
+        setTimeout(() => { els.forEach(e => { if (e) e.focus(); }); }, 0);
+      });
     },
-    syncMappingToText() {
-      // 每条映射编辑 → 实时同步到文本框
-      this.manualTranslations = this.manualMappings.map(m => m.target).join('\n');
-    },
-    syncTextToMappings() {
-      // 文本框编辑 → 反向同步到映射列表（保持行数）
+    saveManualRow(i, ev) {
+      // 单向写回：修正视图 → 大文本框（唯一真相源）
       const targets = this.manualTranslations.split('\n');
-      this.manualMappings.forEach((m, i) => { m.target = targets[i] || ''; });
-      this.manualTranslationLines = targets.length;
+      targets[i] = ev.target.value;
+      this.manualTranslations = targets.join('\n');
+      this.editingManualRow = null;
     },
     async saveManualTranslations() {
-      // 保存译文 + 校验行数 + 自动跳下一步
-      const n = this.manualTranslations.split('\n').filter(l => l.trim() !== '').length;
-      const expected = this.sourceTexts.length;
-      if (n !== expected) {
-        this.toast(`⚠ 译文 ${n} 条，原文 ${expected} 条，请核对后再保存`);
-        this.refreshManualMappings();
+      // 保存译文 + 严格行数校验 + 双写（ai_output + translated）→ 自动跳下一步
+      if (this.manualLineStatus.diff !== 0) {
+        this.toast(`⚠ 译文 ${this.manualLineStatus.count} 行 / 原文 ${this.manualLineStatus.expected} 行，请核对后再保存`);
         return;
       }
       try {
+        // 构造与 AI 结果同构的 results（保留原不确定术语/思考）
+        const prev = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
+        const prevResults = (prev.results || []);
+        const results = this.sourceTexts.map((src, i) => {
+          const lines = this.manualTranslations.split('\n');
+          const prevOne = prevResults.find(r => r.id === i) || {};
+          return {
+            id: i,
+            translation: lines[i] || '',
+            uncertain_terms: prevOne.uncertain_terms || [],
+          };
+        });
+        await this.api(`/api/jobs/${this.currentJob}/ai_output`, {
+          method: 'POST',
+          body: JSON.stringify({results, blocks: prev.blocks || []}),
+        });
         await this.api(`/api/jobs/${this.currentJob}/translated`, {
           method: 'POST',
           body: JSON.stringify({text: this.manualTranslations}),
@@ -945,8 +1523,12 @@ createApp({
     async doTranslate() {
       this.translating = true; this.translateProgress = 0; this.translateResults = [];
       this.translateTotal = 0; this.translateDone = 0;
-      this.translateThinking = {};  // id → 思考过程文本
-      this.translateBuffer = {};    // id → 增量内容
+      this.translateThinking = {};  // 块 base → 思考增量（翻译中实时显示）
+      this.translateBuffer = {};    // 块 base → 内容增量
+      this.translateBlocks = [];    // 已完成的思考块
+      this.translateBlockSaved = new Set();
+      this.selectedTermFilter = null;
+      this.editingRow = null;
       let texts;
       try {
         texts = await this.loadSourceTexts();
@@ -956,8 +1538,11 @@ createApp({
         return;
       }
       if (!texts.length) { this.translating = false; this.toast('没有可翻译文本'); return; }
+      this.translateSources = texts;
       try {
         const provider = this.settings.ai.providers[this.activeProviderKey] || {};
+        // 所选模型的独立配置（上下文/温度/输出上限/thinking 等）
+        const model_config = (provider.model_configs && provider.model_configs[this.activeModel]) || {};
         const body = {
           texts,
           source: this.settings.ai.source_lang || 'en',
@@ -969,7 +1554,8 @@ createApp({
           provider_config: this.engine === 'openai'
             ? {base_url: provider.base_url, api_key: provider.api_key, model: this.activeModel}
             : undefined,
-          model_context: (provider && provider.model_context) || this.settings.ai.model_context || null,
+          model_config,
+          model_context: model_config.model_context || provider.model_context || this.settings.ai.model_context || null,
         };
         // 流式：SSE 解析
         const resp = await fetch('/api/translate/stream', {
@@ -1005,19 +1591,74 @@ createApp({
         // 最终结果汇总（按 id 排序，取自 done 事件记录）
         const finalResults = [...this.translateResults].sort((a, b) => a.id - b.id);
         this.translateResults = finalResults;
+        // 思考已全部 append 到 translateBlocks，清空实时增量
+        this.translateThinking = {};
+        this.translateBuffer = {};
+        this.editingRow = null;
         this.pendingTerms = this.collectTerms(finalResults);
         this.translatedTxt = finalResults.map(r => r.translation).join('\n');
         this.toast(`翻译完成，${this.pendingTerms.length} 个不确定术语待审核`);
         this.translated = true;
+        // 持久化：译文 + 完整 AI 输出（供继续任务时恢复映射/思考）
+        await this.persistAiOutput();
         if (this.pendingTerms.length) this.step = 3;
         else this.step = 4;
       } catch (e) { this.toast('翻译失败: ' + e.message); }
       finally { this.translating = false; }
     },
+    // 保存 AI 输出（逐行译文/不确定术语/思考）到任务目录
+    async persistAiOutput() {
+      try {
+        await this.api(`/api/jobs/${this.currentJob}/ai_output`, {
+          method: 'POST',
+          body: JSON.stringify({results: this.translateResults, blocks: this.translateBlocks}),
+        });
+        await this.api(`/api/jobs/${this.currentJob}/translated`, {
+          method: 'POST',
+          body: JSON.stringify({text: this.translatedTxt}),
+        });
+      } catch (e) { this.toast('保存 AI 输出失败: ' + e.message); }
+    },
+    startEdit(id) {
+      this.editingRow = id;
+      this.$nextTick(() => {
+        const els = Array.isArray(this.$refs.rowEditor) ? this.$refs.rowEditor : [this.$refs.rowEditor];
+        els.forEach(e => { if (e) { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; } });
+      });
+      // 延迟聚焦，避免 textarea 刚挂载的 blur 立即触发保存
+      this.focusRowEditor();
+    },
+    autosizeRow(ev) {
+      ev.target.style.height = 'auto';
+      ev.target.style.height = ev.target.scrollHeight + 'px';
+    },
+    saveEdit(id, ev) {
+      this.updateTranslation(id, ev.target.value);
+      this.editingRow = null;
+    },
+    // textarea 挂载后立即 focus 会误触 blur，延迟到下一个宏任务再聚焦
+    focusRowEditor() {
+      this.$nextTick(() => {
+        setTimeout(() => {
+          const els = Array.isArray(this.$refs.rowEditor) ? this.$refs.rowEditor : [this.$refs.rowEditor];
+          els.forEach(e => { if (e) e.focus(); });
+        }, 0);
+      });
+    },
+    updateTranslation(id, value) {
+      const r = this.translateResults.find(x => x.id === id);
+      if (r) r.translation = value;
+      // 同步导出文本（与旧逻辑保持一致：译文按行拼接）
+      this.translatedTxt = this.translateResults.map(x => x.translation).join('\n');
+    },
+    toggleTermFilter(term) {
+      this.selectedTermFilter = this.selectedTermFilter === term ? null : term;
+    },
     handleStreamEvent(data) {
       if (data.type === 'meta') {
         this.translateTotal = data.total;
         this.translateChunks = data.chunks;
+        this.translateBlocksList = data.blocks || [];
       } else if (data.type === 'thinking') {
         const id = data.id;
         this.translateThinking[id] = (this.translateThinking[id] || '') + (data.delta || '');
@@ -1031,8 +1672,14 @@ createApp({
       } else if (data.type === 'done') {
         const id = data.id;
         this.translateDone = (this.translateDone || 0) + 1;
-        // 移除该行的缓冲（已确定）
-        delete this.translateBuffer[id];
+        // 块完成的第一个 done：把完整思考 append 到思考面板（块内每行都带同一 thinking）
+        if (data.block_id !== undefined && data.thinking && !this.translateBlockSaved.has(data.block_id)) {
+          this.translateBlockSaved.add(data.block_id);
+          this.translateBlocks.push({base: data.block_id, text: data.thinking});
+          delete this.translateThinking[data.block_id];
+        }
+        // 移除该块的缓冲（key 是块首行号；done 按行推送，块完成即清理）
+        delete this.translateBuffer[data.block_id !== undefined ? data.block_id : id];
         // 记录结果（含不确定术语）
         const existing = this.translateResults.find(r => r.id === id);
         if (existing) {
@@ -1044,6 +1691,8 @@ createApp({
             id, translation: data.translation, uncertain_terms: data.uncertain_terms || [], thinking: data.thinking,
           });
         }
+        // 翻译失败的块：弹出真实错误原因（此前被静默丢弃）
+        if (data.error) this.toast('翻译失败: ' + data.error);
       }
     },
     async loadSourceTexts() {
