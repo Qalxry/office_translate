@@ -4,215 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>office_translate</title>
-<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<style>
-/* ===== 基础 ===== */
-* { margin:0; padding:0; box-sizing:border-box; }
-:root {
-  --bg: #f7f8fa;
-  --card: #ffffff;
-  --border: #e3e6ea;
-  --text: #2c3e50;
-  --text-dim: #7f8c9b;
-  --accent: #5b8db8;      /* 淡蓝 */
-  --accent-soft: #eaf1f7;
-  --ok: #6da58a;          /* 淡绿 */
-  --warn: #c9a15e;        /* 淡橙 */
-  --err: #c07a7a;         /* 淡红 */
-  --radius: 6px;
-  --shadow: 0 1px 2px rgba(0,0,0,.05);
-}
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.6;
-}
-/* 无任何渐变：全部扁平纯色 */
-
-/* ===== 布局 ===== */
-.app { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; }
-header { display:flex; align-items:baseline; gap:10px; margin-bottom:24px; }
-header h1 { font-size:20px; font-weight:600; letter-spacing:.5px; }
-header .sub { color:var(--text-dim); font-size:13px; }
-
-/* ===== 步骤条 ===== */
-.stepper { display:flex; gap:8px; margin-bottom:28px; }
-.step {
-  flex:1; display:flex; align-items:center; gap:8px;
-  padding:10px 14px; background:var(--card); border:1px solid var(--border);
-  border-radius:var(--radius); color:var(--text-dim); cursor:pointer; transition:border-color .15s;
-}
-.step:hover { border-color:var(--accent); }
-.step .num {
-  width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  font-size:12px; border:1px solid var(--border); background:var(--bg); color:var(--text-dim);
-  flex-shrink:0;
-}
-.step .label { font-size:13px; white-space:nowrap; }
-.step.done { color:var(--ok); border-color:var(--ok); }
-.step.done .num { background:var(--ok); border-color:var(--ok); color:#fff; }
-.step.active { border-color:var(--accent); background:var(--accent-soft); color:var(--text); }
-.step.active .num { background:var(--accent); border-color:var(--accent); color:#fff; }
-
-/* ===== 卡片 ===== */
-.card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:16px; box-shadow:var(--shadow); }
-.card h3 { font-size:15px; font-weight:600; margin-bottom:12px; }
-.card .desc { color:var(--text-dim); font-size:13px; margin-bottom:14px; }
-
-/* ===== 表单 ===== */
-.row { margin-bottom:12px; }
-.row label { display:block; font-size:13px; color:var(--text-dim); margin-bottom:4px; }
-input, select, textarea {
-  width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius);
-  font-size:14px; font-family:inherit; background:#fff; color:var(--text);
-}
-input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); }
-input[type=file] { padding:6px; }
-textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consolas, monospace; font-size:13px; }
-.inline { display:flex; gap:8px; }
-.inline > * { flex:1; }
-
-/* ===== 按钮 ===== */
-.btn {
-  display:inline-flex; align-items:center; gap:6px; padding:8px 18px;
-  border:1px solid var(--border); border-radius:var(--radius); background:#fff; color:var(--text);
-  font-size:14px; cursor:pointer; transition:all .15s;
-}
-.btn:hover { border-color:var(--accent); color:var(--accent); }
-.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-.btn.primary:hover { opacity:.9; color:#fff; }
-.btn.ok { background:var(--ok); border-color:var(--ok); color:#fff; }
-.btn.ok:hover { opacity:.9; color:#fff; }
-.btn.danger { color:var(--err); border-color:var(--err); }
-.btn.danger:hover { background:#fdf5f5; }
-.btn:disabled { opacity:.5; cursor:not-allowed; }
-.btn.sm { padding:4px 10px; font-size:12px; }
-
-/* ===== 提示说明 ===== */
-.hint { font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
-.hint.warn { color: var(--warn); }
-
-/* ===== 列表 ===== */
-.list { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-.list-item { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border); }
-.list-item:last-child { border-bottom:none; }
-.list-item:hover { background:#fafbfc; }
-.item-main { flex:1; min-width:0; }
-.item-title { font-size:14px; }
-.item-meta { font-size:12px; color:var(--text-dim); }
-
-/* ===== 标签 ===== */
-.tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin-right:6px; }
-.tag.blue { background:var(--accent-soft); color:var(--accent); }
-.tag.green { background:#e8f3ee; color:var(--ok); }
-
-/* ===== 进度/状态 ===== */
-.status { display:flex; align-items:center; gap:8px; font-size:13px; }
-.status .dot { width:8px; height:8px; border-radius:50%; }
-.dot.ok { background:var(--ok); }
-.dot.warn { background:var(--warn); }
-.dot.err { background:var(--err); }
-.progress-bar { height:6px; background:var(--bg); border:1px solid var(--border); border-radius:3px; overflow:hidden; }
-.progress-bar .fill { height:100%; background:var(--accent); transition:width .2s; }
-
-/* ===== 术语卡片 ===== */
-.term-card { border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:10px; }
-.term-card .term-src { font-weight:600; font-size:14px; }
-.term-card .term-reason { color:var(--text-dim); font-size:13px; margin:4px 0; }
-.term-card .term-candidate { font-size:13px; color:var(--warn); }
-.term-actions { display:flex; gap:6px; margin-top:10px; }
-
-/* ===== 空状态 ===== */
-.empty { text-align:center; color:var(--text-dim); padding:32px 0; font-size:13px; }
-
-/* ===== 滚动区域（翻译中长列表） ===== */
-.scroll-area { max-height: 420px; overflow-y: auto; }
-.scroll-area::-webkit-scrollbar { width: 8px; }
-.scroll-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-.scroll-area::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-/* ===== 流式光标 ===== */
-.caret { color: var(--accent); animation: blink 1s step-start infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-/* 思考过程块 */
-.thinking-block { background: var(--bg); border-left: 2px solid var(--warn); padding: 6px 10px; border-radius: 4px; }
-
-/* ===== 翻译工作区（APP 式布局：固定高度 + 内部滚动） ===== */
-.translate-workspace {
-  display: flex; gap: 12px; align-items: stretch;
-  margin-top: 14px;
-  height: 440px;
-}
-.map-list {
-  flex: 1; min-width: 0;
-  overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--card);
-}
-.map-list::-webkit-scrollbar, .term-panel::-webkit-scrollbar { width: 8px; }
-.map-list::-webkit-scrollbar-thumb, .term-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-.map-list::-webkit-scrollbar-thumb:hover, .term-panel::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-.map-item { padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.map-item:last-child { border-bottom: none; }
-.map-item .row-num { font-size: 11px; color: var(--text-dim); margin-right: 6px; flex-shrink: 0; }
-.map-item .src { font-size: 13px; color: var(--text-dim); white-space: pre-wrap; }
-.map-item .tgt { font-size: 14px; white-space: pre-wrap; margin-top: 4px; cursor: text; }
-.map-item .tgt.editing { cursor: auto; }
-.map-item .tgt-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; }
-.map-item .tgt-row .tgt { flex: 1; min-width: 0; margin-top: 0; }
-.map-item .tgt-row .tgt.placeholder { color: var(--text-dim); }
-.map-item .tgt-row .btn { flex-shrink: 0; margin-top: 1px; }
-.map-item.translating { background: #fdfcf7; }
-.map-item.filtered { background: var(--accent-soft); }
-.map-item .caret { color: var(--accent); animation: blink 1s step-start infinite; }
-
-/* 思考过程面板（每次思考 append，可折叠） */
-.thinking-panel { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
-.thinking-panel > summary { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--warn); font-weight: 600; user-select: none; }
-.thinking-panel .t-body { max-height: 220px; overflow-y: auto; padding: 6px 14px 10px; }
-.thinking-panel .thinking-block { margin: 0 0 8px; }
-.thinking-panel .t-title { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
-
-/* 右侧：不确定术语聚合面板 */
-.term-panel {
-  width: 250px; flex-shrink: 0;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--card); overflow-y: auto; padding: 10px;
-}
-.term-panel h4 { font-size: 13px; margin-bottom: 8px; color: var(--text-dim); }
-.term-item {
-  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
-  margin-bottom: 6px; cursor: pointer; transition: border-color .15s;
-}
-.term-item:hover { border-color: var(--accent); }
-.term-item.active { border-color: var(--accent); background: var(--accent-soft); }
-.term-item .term { font-weight: 600; font-size: 13px; }
-.term-item .rows { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-.term-item .rows.warn { color: var(--warn); }
-
-/* ===== 模型行（摘要 + 点击展开） ===== */
-.model-row { border:1px solid var(--border); border-radius:var(--radius); margin-bottom:6px; overflow:hidden; }
-.model-row.active { border-color:var(--accent); }
-.model-row-head {
-  display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
-  background:var(--card); user-select:none;
-}
-.model-row-head:hover { background:#fafbfc; }
-.model-row.active .model-row-head { background:var(--accent-soft); }
-.model-arrow { font-size:11px; color:var(--text-dim); width:12px; text-align:center; flex-shrink:0; }
-.model-summary { font-size:11px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.model-actions { margin-left:auto; display:flex; gap:4px; flex-shrink:0; }
-.model-detail { padding:0 10px 10px; border-top:1px dashed var(--border); background:var(--card); }
-
-/* ===== toast ===== */
-#toast {
-  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-  background:#333; color:#fff; padding:10px 22px; border-radius:6px; font-size:13px;
-  z-index:1000; opacity:0; transition:opacity .2s; pointer-events:none;
-}
-#toast.show { opacity:1; }
-</style>
+<!-- Vue 3.5.18 is vendored with the GUI so startup does not require a network. -->
+<script src="vendor/vue.global.prod.js"></script>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="app">
@@ -221,15 +15,20 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <h1>office_translate</h1>
       <span class="sub">导出 · AI 翻译 · 审核 · 回填</span>
       <nav style="margin-left:auto;display:flex;gap:6px;">
-        <button class="btn sm" :class="{primary: view === 'workflow'}" @click="view = 'workflow'">工作流</button>
-        <button class="btn sm" :class="{primary: view === 'glossary'}" @click="view = 'glossary'">术语库</button>
-        <button class="btn sm" :class="{primary: view === 'settings'}" @click="view = 'settings'">设置</button>
+        <button type="button" class="btn sm" :class="{primary: view === 'workflow'}" :aria-current="view === 'workflow' ? 'page' : null" @click="view = 'workflow'">工作流</button>
+        <button type="button" class="btn sm" :class="{primary: view === 'glossary'}" :aria-current="view === 'glossary' ? 'page' : null" @click="view = 'glossary'">术语库</button>
+        <button type="button" class="btn sm" :class="{primary: view === 'settings'}" :aria-current="view === 'settings' ? 'page' : null" @click="view = 'settings'">设置</button>
       </nav>
     </header>
 
     <!-- 术语库管理视图 -->
     <div v-if="view === 'glossary'" class="card">
       <h3>术语库管理</h3>
+      <div v-if="glossaryState === 'loading'" class="hint" role="status">正在加载术语库…</div>
+      <div v-else-if="glossaryState === 'error'" class="error-banner" role="alert">
+        术语库加载失败：{{ glossaryError }}
+        <button class="btn sm" @click="loadGlossaryDetail">重试</button>
+      </div>
       <p class="desc">按类别浏览、编辑、删除、新增术语。审核时接受的术语也会自动沉淀到这里。</p>
       <p class="hint" style="margin-bottom:10px;">术语按类别组织（如「汽车行业」「软件」），翻译时勾选使用的类别。<br>只有「确实出现在本次文本中」的术语才会注入给 AI，保证采用你的译法。</p>
       <div class="row inline">
@@ -274,12 +73,17 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
           <div v-if="!cat.entries.length" class="empty">该类别暂无术语</div>
         </div>
       </div>
-      <div v-if="!filteredGlossary.length" class="empty">暂无术语，新增或审核时沉淀</div>
+      <div v-if="glossaryState === 'ready' && !filteredGlossary.length" class="empty">暂无术语，新增或审核时沉淀</div>
     </div>
 
     <!-- 设置视图 -->
     <div v-if="view === 'settings'" class="card">
       <h3>设置</h3>
+      <div v-if="settingsState === 'loading'" class="hint" role="status">正在加载设置…</div>
+      <div v-else-if="settingsState === 'error'" class="error-banner" role="alert">
+        {{ settingsError }}
+        <button class="btn sm" @click="loadSettings">重试加载</button>
+      </div>
 
       <!-- 供应商管理 -->
       <div class="row">
@@ -291,7 +95,10 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
             <div style="display:flex;align-items:center;gap:8px;">
               <strong>{{ p.name }}</strong>
               <span class="tag" :class="key === settings.ai.active_provider ? 'green' : 'blue'">{{ key === settings.ai.active_provider ? '使用中' : key }}</span>
-              <span style="margin-left:auto;display:flex;gap:4px;">
+              <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap;">
+                <button class="btn sm" @click="testProvider(key)" :disabled="testingProvider === key">
+                  <span v-if="testingProvider === key" class="spinner"></span> {{ testingProvider === key ? '测试中…' : '测试连接' }}
+                </button>
                 <button class="btn sm" @click="setActiveProvider(key)">设为使用</button>
                 <button class="btn sm danger" @click="removeProvider(key)">删除</button>
               </span>
@@ -302,14 +109,20 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
             </div>
             <div class="row" style="margin-bottom:6px;">
               <label>API Key</label>
-              <input :value="p.api_key" type="password" @change="updateProvider(key, 'api_key', $event.target.value)" placeholder="sk-...">
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input :value="pendingApiKeys[key] !== undefined ? pendingApiKeys[key] : ''" type="password" @change="updateProviderKey(key, $event.target.value)" :placeholder="providerKeyPlaceholder(key)" autocomplete="new-password" spellcheck="false" style="flex:1;">
+                <span v-if="p.api_key_configured" class="tag green">已配置</span>
+              </div>
+              <p v-if="providerTestResults[key]" class="hint" :class="{warn: !providerTestResults[key].ok}" style="margin-top:2px;">
+                {{ providerTestResults[key].ok ? '✓ 连接正常' : '✗ 连接失败' }}<template v-if="providerTestResults[key].latency_ms != null"> · {{ providerTestResults[key].latency_ms }}ms</template><template v-if="providerTestResults[key].error"> · {{ providerTestResults[key].error }}</template>
+              </p>
             </div>
             <!-- 模型列表：model_configs 键驱动，摘要行 + 点击展开，默认只展开当前使用模型 -->
             <div class="row" style="margin-bottom:6px;">
               <label>模型</label>
               <div v-if="providerModelNames(key).length">
                 <div v-for="m in providerModelNames(key)" :key="key + '/' + m" class="model-row" :class="{active: key === activeProviderKey && m === activeModel}">
-                  <div class="model-row-head" @click="toggleExpand(key, m)">
+                  <div class="model-row-head" role="button" tabindex="0" :aria-expanded="isExpanded(key, m)" @click="toggleExpand(key, m)" @keydown.enter.self.prevent="toggleExpand(key, m)" @keydown.space.self.prevent="toggleExpand(key, m)">
                     <span class="model-arrow">{{ isExpanded(key, m) ? '▾' : '▸' }}</span>
                     <strong style="font-size:13px;">{{ m }}</strong>
                     <span class="tag green" v-if="key === activeProviderKey && m === activeModel">使用中</span>
@@ -360,13 +173,22 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
                       </select>
                     </div>
                     <div style="flex:1;min-width:130px;">
-                      <label style="font-size:11px;">输出格式（默认自动）</label>
-                      <select :value="modelConfigValue(key, m, 'response_format', '')" @change="updateModelConfig(key, m, 'response_format', $event.target.value, 'text')">
-                        <option value="">自动探测</option>
-                        <option value="json_schema">json_schema</option>
-                        <option value="json_object">json_object</option>
-                        <option value="none">无（XML 标签）</option>
+                      <label style="font-size:11px;">模型输出格式</label>
+                      <select :value="modelConfigValue(key, m, 'output_format', 'xml')" @change="updateModelConfig(key, m, 'output_format', $event.target.value, 'text')">
+                        <option value="xml">XML（默认，兼容性好）</option>
+                        <option value="json">JSON</option>
+                        <option value="text">文本</option>
                       </select>
+                    </div>
+                    <div style="flex:1;min-width:130px;">
+                      <label style="font-size:11px;">响应格式强化（仅 JSON）</label>
+                      <select :value="modelConfigValue(key, m, 'response_format', 'none')" @change="updateModelConfig(key, m, 'response_format', $event.target.value, 'text')">
+                        <option value="none">无（默认，流式兼容性最好）</option>
+                        <option value="auto">自动尝试 json_object</option>
+                        <option value="json_object" :disabled="modelConfigValue(key, m, 'output_format', 'xml') !== 'json'">json_object</option>
+                        <option value="json_schema" :disabled="modelConfigValue(key, m, 'output_format', 'xml') !== 'json'">json_schema</option>
+                      </select>
+                      <p class="hint" style="font-size:11px;margin-top:3px;">json_object/json_schema 可能被供应商整包返回；需要逐条显现时使用“无”。</p>
                     </div>
                   </div>
                   <div style="margin-top:6px;">
@@ -429,6 +251,11 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <!-- 镜像站 -->
       <div class="row" style="margin-top:12px;">
         <label>Google 镜像站（失败自动切换，按顺序尝试）</label>
+        <div v-if="mirrorsState === 'loading'" class="hint" role="status">正在加载镜像站…</div>
+        <div v-else-if="mirrorsState === 'error'" class="error-banner" role="alert">
+          镜像站加载失败：{{ mirrorsError }}
+          <button class="btn sm" @click="loadMirrors">重试</button>
+        </div>
         <textarea v-model="mirrorsText" rows="4" style="font-family:monospace;"></textarea>
         <p class="hint">每行一个镜像站。翻译时按顺序尝试，失败的自动切换到下一个（连续失败进入冷却）。</p>
       </div>
@@ -453,24 +280,29 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
 
     <!-- 步骤条 -->
     <div class="stepper">
-      <div v-for="(s, i) in steps" :key="i" class="step" :class="{done: step > i, active: step === i}" @click="step = i">
+      <button type="button" v-for="(s, i) in steps" :key="i" class="step" :class="{done: step > i, active: step === i, disabled: !stepReachable(i)}" :aria-current="step === i ? 'step' : null" :aria-disabled="!stepReachable(i)" @click="goStep(i)" :title="stepReachable(i) ? '' : stepBlockReason(i)">
         <span class="num">{{ step > i ? '✓' : i + 1 }}</span>
         <span class="label">{{ s }}</span>
-      </div>
+      </button>
     </div>
 
     <!-- 步骤 1：任务 -->
     <div v-if="step === 0" class="card">
       <h3>选择或新建任务</h3>
       <p class="desc">每个翻译任务对应一个工作目录，原始文档会被复制进工作区。</p>
+      <div v-if="jobsState === 'loading'" class="hint" role="status">正在加载任务…</div>
+      <div v-else-if="jobsState === 'error'" class="error-banner" role="alert">
+        任务列表加载失败：{{ jobsError }}
+        <button class="btn sm" @click="refreshJobs">重试</button>
+      </div>
       <div class="row">
         <label>输入文件路径</label>
         <div class="inline">
           <input v-model="newJobInput" placeholder="/path/to/file.xlsx">
           <button class="btn" style="flex:0 0 auto;" @click="$refs.fileInput.click()" :disabled="uploadingFile">{{ uploadingFile ? '上传中…' : '浏览文件…' }}</button>
-          <input type="file" ref="fileInput" style="display:none;" @change="onFileSelected">
+          <input type="file" ref="fileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" @change="onFileSelected">
         </div>
-        <p class="hint">选择要翻译的文档。支持 .xlsx（Excel）；.xls 会自动转换。文件会被复制进工作区，原文件不受影响。</p>
+        <p class="hint">选择要翻译的文档。当前支持 .xlsx（Excel）；.xls 请先在 Excel/WPS 中“另存为” .xlsx。文件会被复制进工作区，原文件不受影响。</p>
       </div>
       <div class="row">
         <label>任务名（可选）</label>
@@ -484,22 +316,23 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div class="hint" style="margin-top:12px;">已建任务会显示进度与下载入口，点「继续」从上次的位置接着做。</div>
       <div v-if="jobs.length" class="list" style="margin-top:16px;">
         <div v-for="j in jobs" :key="j.job" class="list-item" :class="{selected: currentJob === j.job}" style="cursor:pointer;flex-wrap:wrap;gap:8px;">
-          <div class="item-main" @click="selectJob(j)" style="min-width:180px;">
+          <button type="button" class="item-main job-select" @click="selectJob(j)" style="min-width:180px;">
             <div class="item-title" style="display:flex;align-items:center;gap:6px;">
               {{ j.job }}
-              <span class="tag" :class="j.stage === '已导出' ? 'green' : (j.stage === '待提取' ? '' : 'blue')">{{ j.stage }}</span>
+              <span class="tag" :class="j.needs_reextract ? 'warn' : (j.stage_code === 'error' ? 'err' : (j.stage_code === 'exported' ? 'green' : (j.stage_code === 'created' ? '' : 'blue')))">{{ j.stage }}</span>
             </div>
             <div class="item-meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ j.input }}</div>
-          </div>
+            <div v-if="j.needs_reextract" class="item-meta warn">旧任务不能继续沿用原有译文，请重新提取。</div>
+          </button>
           <div style="display:flex;gap:4px;align-items:center;margin-left:auto;">
             <a v-if="j.output_translated" class="btn sm" :href="`/api/jobs/${j.job}/download?kind=translated`" title="下载仅译文版">⬇ 译文</a>
             <a v-if="j.output_bilingual" class="btn sm" :href="`/api/jobs/${j.job}/download?kind=bilingual`" title="下载对照版">⬇ 对照</a>
-            <button class="btn sm" @click="selectJob(j)">继续</button>
+            <button class="btn sm" @click="selectJob(j)">{{ j.needs_reextract ? '重新提取' : '继续' }}</button>
             <button class="btn sm danger" @click="deleteJob(j)">✕</button>
           </div>
         </div>
       </div>
-      <div v-else class="empty" style="margin-top:12px;">暂无任务，输入文件路径新建一个</div>
+      <div v-else-if="jobsState === 'ready'" class="empty" style="margin-top:12px;">暂无任务，输入文件路径新建一个</div>
     </div>
 
     <!-- 步骤 2：提取 -->
@@ -508,21 +341,28 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <p class="desc" v-if="currentJob">任务：<strong>{{ currentJob }}</strong></p>
       <p class="desc" v-else>请先选择任务</p>
       <button class="btn primary" @click="doExtract" :disabled="!currentJob || extracting">
+        <span v-if="extracting" class="spinner"></span>
         {{ extracting ? '提取中…' : '开始提取' }}
       </button>
       <p class="hint">提取会扫描文档中的可翻译文本（跳过数值、公式、日期）。<br>重复文本只导出一次，回填时同步到所有出现位置。</p>
-      <div v-if="extractInfo" class="list" style="margin-top:16px;">
-        <div class="list-item"><span class="item-title">工作表</span><span class="item-meta">{{ extractInfo.sheets.join(', ') }}</span></div>
-        <div class="list-item"><span class="item-title">可翻译单元格</span><span class="item-meta">{{ extractInfo.cells_translatable }}</span></div>
-        <div class="list-item"><span class="item-title">去重文本</span><span class="item-meta">{{ extractInfo.unique_texts }}</span></div>
+      <div v-if="extractInfo" class="stat-grid">
+        <div class="stat-card"><div class="num">{{ extractInfo.sheets.length }}</div><div class="lbl">工作表</div></div>
+        <div class="stat-card accent"><div class="num">{{ extractInfo.cells_translatable }}</div><div class="lbl">可翻译单元格</div></div>
+        <div class="stat-card accent"><div class="num">{{ extractInfo.unique_texts }}</div><div class="lbl">去重文本</div></div>
+        <div class="stat-card warn"><div class="num">{{ (extractInfo.cells_total || extractInfo.cells_translatable) - extractInfo.cells_translatable }}</div><div class="lbl">跳过（数值/公式/日期）</div></div>
       </div>
       <!-- 原文预览（可查看/复制） -->
-      <div v-if="sourceTexts.length" class="row" style="margin-top:16px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          <label style="margin:0;">原文内容（{{ sourceTexts.length }} 条）</label>
+      <div v-if="sourceTexts.length" class="line-preview" style="margin-top:4px;">
+        <div class="lp-head">
+          <span>原文内容（{{ sourceTexts.length }} 条）</span>
           <button class="btn sm" style="margin-left:auto;" @click="copySource">复制全部</button>
         </div>
-        <textarea v-model="sourceText" rows="10" readonly style="font-family:monospace;background:var(--bg);"></textarea>
+        <div class="lp-list">
+          <div v-for="(t, i) in sourceTexts" :key="i" class="lp-item">
+            <span class="lp-num">{{ i + 1 }}</span>
+            <span class="lp-text">{{ t }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -536,57 +376,66 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       </div>
       <div v-if="translateMode === 'manual'">
         <p class="desc">复制原文 → 用外部网页 AI 翻译 → 粘贴译文回来，无需 API 也能享受 AI 翻译。</p>
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <button class="btn" @click="copySource" :disabled="!sourceTexts.length">📋 复制原文</button>
-          <span class="item-meta" style="align-self:center;">共 {{ sourceTexts.length }} 行，粘贴译文时每行一条</span>
+        <div v-if="manualError" class="error-banner recovery-card" role="alert">
+          <div><strong>手动译文未保存</strong><br>{{ manualError }}</div>
+          <button type="button" class="btn sm" @click="saveManualTranslations">重试保存</button>
+          <button type="button" class="btn sm" @click="confirmLoadManual">重新载入</button>
+          <button type="button" class="btn sm" @click="copyDiagnostic">复制诊断</button>
         </div>
+        <!-- ① 原文 -->
         <div class="row">
-          <label>译文文本（粘贴区：外部 AI 输出的译文直接粘贴，每行一条）</label>
-          <textarea v-model="manualTranslations" rows="6" style="font-family:monospace;" placeholder="把网页端 AI 翻译的结果粘贴到这里，每行对应一行原文…"></textarea>
-          <!-- 行数实时校验：严格按行比对，列出缺译文的行号 -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <label style="margin:0;">① 原文（{{ sourceTexts.length }} 条）</label>
+            <button class="btn sm" style="margin-left:auto;" @click="copySource" :disabled="!sourceTexts.length || !manualBatchSafe">📋 复制全部</button>
+          </div>
+          <div v-if="sourceTexts.length" class="line-preview">
+            <div class="lp-list" style="max-height:160px;">
+              <div v-for="(t, i) in sourceTexts" :key="i" class="lp-item">
+                <span class="lp-num">{{ i + 1 }}</span>
+                <span class="lp-text">{{ t }}</span>
+              </div>
+            </div>
+          </div>
+          <p v-else class="hint">请先在「提取」步骤提取原文。</p>
+        </div>
+        <!-- ② 粘贴译文 -->
+        <div class="row">
+          <label>② 粘贴译文（每行一条，对应上方原文）</label>
+          <textarea id="manual-translations" :value="manualTranslations" @input="updateManualPaste" :disabled="!manualBatchSafe" rows="6" style="font-family:monospace;" placeholder="把外部 AI 翻译结果粘贴到这里，每行对应一行原文…"></textarea>
+          <p v-if="!manualBatchSafe" class="hint warn">原文中包含内部换行，不能安全使用按行批量粘贴。请在下方对照区逐条填写译文。</p>
           <p v-if="manualLineStatus.count > 0" class="hint" :class="{warn: manualLineStatus.diff !== 0}">
             已粘贴 {{ manualLineStatus.count }} 行 / 原文 {{ manualLineStatus.expected }} 行
             <template v-if="manualLineStatus.diff === 0">✓ 行数一致</template>
             <template v-else-if="manualLineStatus.diff > 0">（多了 {{ manualLineStatus.diff }} 行，请核对）</template>
-            <template v-else>⚠ 缺少 {{ -manualLineStatus.diff }} 行译文：{{ manualLineStatus.missing }}</template>
+            <template v-else>⚠ 缺少 {{ -manualLineStatus.diff }} 行译文</template>
+          </p>
+          <p v-if="manualLineStatus.diff === 0 && manualEmptyRows.length" class="hint warn" role="status">
+            有 {{ manualEmptyRows.length }} 条空译文；保存时必须逐次确认，未确认不能导出。
           </p>
         </div>
-        <!-- 已保存译文预览（只读对照，不影响粘贴区） -->
-        <div v-if="showManualPreview" class="card" style="background:var(--bg);padding:12px;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-            <strong style="font-size:13px;">已保存译文预览</strong>
-            <button class="btn sm" style="margin-left:auto;" @click="showManualPreview = false">关闭</button>
-          </div>
-          <div class="list scroll-area" style="max-height:240px;">
-            <div v-for="(p, i) in manualPreview" :key="'prev' + i" class="map-item" style="padding:8px 12px;">
+        <!-- ③ 对照预览 -->
+        <div v-if="manualMappings.length" class="row">
+          <label>③ 对照预览（随粘贴区自动同步，可逐行修改）</label>
+          <div class="list scroll-area" style="max-height:360px;">
+            <div v-for="(m, i) in manualMappings" :key="m.id" class="map-item" style="padding:10px 14px;">
               <div style="display:flex;align-items:baseline;">
                 <span class="row-num">#{{ i + 1 }}</span>
-                <span class="src">{{ p.source }}</span>
+                <span class="src">{{ m.source }}</span>
               </div>
-              <div class="tgt" style="margin-top:2px;">{{ p.target || '（未填写）' }}</div>
+              <div v-if="editingManualRow === i" class="tgt editing" style="margin-top:4px;">
+                <textarea :value="m.target" @blur="saveManualRow(i, $event)" @input="autosizeRow($event)" ref="manualEditor" rows="2" style="width:100%;border:1px solid var(--accent);padding:6px 8px;background:#fff;resize:vertical;font-size:14px;font-family:inherit;"></textarea>
+              </div>
+              <div v-else class="tgt-row" style="margin-top:4px;">
+                <span class="tgt" :class="{placeholder: !m.target}">{{ m.target || '（未填写）' }}</span>
+                <button class="btn sm" @click="startManualEdit(i)" title="编辑译文">✎</button>
+              </div>
             </div>
           </div>
         </div>
-        <!-- 逐行修正视图：从译文文本派生，编辑单向写回文本 -->
-        <div v-if="manualMappings.length" class="list scroll-area" style="margin-bottom:12px;max-height:360px;">
-          <div v-for="(m, i) in manualMappings" :key="i" class="map-item" style="padding:10px 14px;">
-            <div style="display:flex;align-items:baseline;">
-              <span class="row-num">#{{ i + 1 }}</span>
-              <span class="src">{{ m.source }}</span>
-            </div>
-            <div v-if="editingManualRow === i" class="tgt editing" style="margin-top:4px;">
-              <textarea :value="m.target" @blur="saveManualRow(i, $event)" @input="autosizeRow($event)" ref="manualEditor" rows="2" style="width:100%;border:1px solid var(--accent);padding:6px 8px;background:#fff;resize:vertical;font-size:14px;font-family:inherit;"></textarea>
-            </div>
-            <div v-else class="tgt-row" style="margin-top:4px;">
-              <span class="tgt" :class="{placeholder: !m.target}">{{ m.target || '（未填写）' }}</span>
-              <button class="btn sm" @click="startManualEdit(i)" title="编辑译文">✎</button>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px;">
+        <!-- 操作 -->
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <button class="btn primary" @click="saveManualTranslations" :disabled="!currentJob || manualLineStatus.diff !== 0">保存并进入下一步</button>
-          <button class="btn" @click="previewManual" :disabled="!currentJob">预览翻译映射结果</button>
-          <button class="btn" @click="loadManualStart" :disabled="!currentJob">覆盖为已有译文</button>
+          <button class="btn" @click="confirmLoadManual" :disabled="!currentJob">载入上次译文</button>
         </div>
       </div>
       <div v-else>
@@ -624,14 +473,32 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
         <span v-else class="item-meta">暂无术语库</span>
         <p class="hint">只把「出现在本次文本中」的术语注入给 AI，保证采用你的译法。术语在「审核」步骤沉淀，可在「术语库」页管理。</p>
       </div>
-      <button class="btn primary" @click="doTranslate" :disabled="!currentJob || translating">
-        {{ translating ? '翻译中…' : '开始翻译' }}
-      </button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button v-if="!translating" class="btn primary" @click="doTranslate()" :disabled="!currentJob">开始翻译</button>
+        <button v-else class="btn danger" @click="stopTranslate">■ 停止翻译</button>
+        <button v-if="!translating && failedRows.length" class="btn" @click="retryFailed" :disabled="retryingFailed">
+          <span v-if="retryingFailed" class="spinner"></span> 重试失败行（{{ failedRows.length }}）
+        </button>
+      </div>
+      <p v-if="translating" class="hint" role="status">停止会立即阻止本地继续提交结果，并尽力取消尚未完成的请求；供应商已经接收的请求仍可能产生费用。</p>
+      <!-- 翻译状态栏 -->
+      <div v-if="translating || translateSources.length" class="translate-status">
+        <div class="seg"><span class="lbl">进度</span><span class="val">{{ translateProgress }}%</span></div>
+        <div class="seg"><span class="lbl">已完成</span><span class="val">{{ translateDone }}/{{ translateTotal }}</span></div>
+        <div class="seg"><span class="lbl">耗时</span><span class="val">{{ translateElapsedText }}</span></div>
+        <div class="seg" v-if="engine === 'openai'"><span class="lbl">模型</span><span class="val">{{ activeModel }}</span></div>
+        <div class="seg" v-if="failedRows.length"><span class="lbl">失败</span><span class="val" style="color:var(--err);">{{ failedRows.length }}</span></div>
+      </div>
+      <div v-if="translateError" class="error-banner recovery-card" role="alert">
+        <div><strong>翻译未能完成</strong><br>{{ translateError }}</div>
+        <button v-if="!translating" class="btn sm" @click="failedRows.length ? retryFailed() : doTranslate()" :disabled="retryingFailed">{{ failedRows.length ? '重试失败行' : '重新开始' }}</button>
+        <button type="button" class="btn sm" @click="copyDiagnostic">复制诊断</button>
+      </div>
       <p class="hint">翻译过程实时显示：进度条按行更新，译文逐条填充到下方对照区；有思考能力的模型会把思考过程追加到上方折叠面板。<br>右侧列出模型自报的不确定术语，点击术语只显示受它影响的行；译文行点击可直接编辑。</p>
       <!-- 思考过程区（每次思考 append，可折叠；翻译中自动展开） -->
       <details v-if="translateBlocks.length || (translating && Object.keys(translateThinking).length)" class="thinking-panel" :open="translating">
         <summary>🧠 思考过程（{{ thinkingCount }} 次）</summary>
-        <div class="t-body">
+        <div class="t-body" ref="thinkingScroll" @scroll="onThinkingScroll">
           <div v-for="b in translateBlocks" :key="'tb' + b.base" class="thinking-block">
             <div class="t-title">块 {{ b.base + 1 }} 起 · {{ b.text.length }} 字</div>
             <div class="item-meta" style="white-space:pre-wrap;font-size:12px;">{{ b.text }}</div>
@@ -646,39 +513,46 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
       <div v-if="translating" class="progress-bar" style="margin-top:14px;">
         <div class="fill" :style="{width: translateProgress + '%'}"></div>
       </div>
-      <div v-if="translating && translateTotal" class="item-meta" style="margin-top:6px;text-align:center;">
-        已翻译 {{ translateDone }} / {{ translateTotal }} 行（{{ translateProgress }}%）
+      <!-- 搜索 -->
+      <div v-if="translateSources.length" class="search-box" style="margin-bottom:10px;">
+        <span class="s-icon">🔍</span>
+        <input v-model="translateQuery" placeholder="搜索原文或译文…">
+        <button v-if="translateQuery" class="s-clear" @click="translateQuery = ''">✕</button>
       </div>
       <!-- 翻译工作区：左 原文↔译文逐行对照（固定高度滚动） | 右 不确定术语 -->
       <div v-if="translateSources.length" class="translate-workspace">
-        <div class="map-list">
-          <!-- 翻译中：只显示已开始的行（实时 append，不一开始全列） -->
-          <div v-for="row in visibleTranslateRows" :key="row.id" class="map-item" :class="{translating: translating && row.buffer !== undefined, filtered: selectedTermFilter && !translating}">
+        <div class="map-list" ref="translateMapList" @scroll="onTranslateListScroll">
+          <!-- 翻译中：只显示已出现正式结果或预览片段的行，按原文顺序排列 -->
+          <div v-for="row in visibleTranslateRows" :key="row.id" class="map-item" :class="{translating: translating && row.previewing, filtered: selectedTermFilter && !translating, failed: failedRows.includes(row.id)}">
             <div style="display:flex;align-items:baseline;">
               <span class="row-num">#{{ row.id + 1 }}</span>
               <span class="src">{{ row.source }}</span>
             </div>
-            <div v-if="row.buffer !== undefined" class="tgt">{{ row.buffer }}<span class="caret">▋</span></div>
             <div v-if="editingRow === row.id" class="tgt editing">
               <textarea :value="row.translation" @blur="saveEdit(row.id, $event)" @input="autosizeRow($event)" ref="rowEditor" rows="2" style="width:100%;border:1px solid var(--accent);padding:6px 8px;background:#fff;resize:vertical;font-size:14px;font-family:inherit;"></textarea>
             </div>
             <div v-else class="tgt-row">
-              <span class="tgt" :class="{placeholder: !row.translation}">{{ row.translation || '（未翻译）' }}</span>
-              <button class="btn sm" @click="startEdit(row.id)" title="编辑译文">✎</button>
+              <span class="tgt" :class="{placeholder: !row.translation, previewing: row.previewing}">{{ row.translation || (row.previewing ? '（翻译中…）' : '（未翻译）') }}</span>
+              <button class="btn sm" @click="startEdit(row.id)" :disabled="row.previewing" title="编辑译文">✎</button>
             </div>
-            <div v-if="row.uncertain.length" class="item-meta" style="margin-top:2px;">⚠ 不确定：{{ row.uncertain.map(t => t.term).join('、') }}</div>
+            <div v-if="row.uncertain.length" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
+              <button type="button" v-for="t in row.uncertain" :key="t.term" class="chip" @click="toggleTermFilter(t.term)">{{ t.term }}</button>
+            </div>
           </div>
           <div v-if="!filteredTranslateRows.length" class="empty">没有可显示的行</div>
         </div>
         <!-- 右侧：不确定术语聚合（含影响行，点击筛选左侧） -->
         <div class="term-panel">
-          <h4>不确定术语（{{ termAggregates.length }}）</h4>
+          <h4 style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+            <span>不确定术语（{{ termAggregates.length }}）</span>
+            <button v-if="selectedTermFilter" class="btn sm" @click="selectedTermFilter = null">清除</button>
+          </h4>
           <div v-if="termAggregates.length">
-            <div v-for="t in termAggregates" :key="t.term" class="term-item" :class="{active: selectedTermFilter === t.term}" @click="toggleTermFilter(t.term)">
+            <button type="button" v-for="t in termAggregates" :key="t.term" class="term-item" :class="{active: selectedTermFilter === t.term}" @click="toggleTermFilter(t.term)">
               <div class="term">{{ t.term }}</div>
               <div class="rows">影响行：{{ t.rows.map(r => r + 1).join(', ') }}</div>
               <div v-if="t.candidate" class="rows warn">建议：{{ t.candidate }}</div>
-            </div>
+            </button>
           </div>
           <div v-else class="empty" style="padding:16px 0;">暂无不确定术语</div>
         </div>
@@ -688,22 +562,78 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
 
     <!-- 步骤 4：审核 -->
     <div v-if="step === 3" class="card">
-      <h3>审核不确定术语</h3>
-      <p class="desc">模型认为把握不足的术语会列出（如专有名词、缩写、多义词），由你确认。</p>
-      <p class="hint" style="margin-bottom:10px;">「接受并入库」把该术语存入所选类别的术语库，下次翻译会自动采用；「忽略」仅本次不处理。<br>全部处理完会自动进入下一步。</p>
-      <div v-if="pendingTerms.length">
-        <div v-for="(t, i) in pendingTerms" :key="i" class="term-card">
-          <div class="term-src">{{ t.term }}</div>
+      <h3>审核与确认</h3>
+      <p class="desc">逐条处理模型标记的术语，并确认任何空译文。审核决定会按稳定 ID 保存，刷新或重新打开任务后可以恢复。</p>
+      <div v-if="reviewState === 'loading'" class="hint" role="status" aria-live="polite">正在恢复审核记录…</div>
+      <div v-if="reviewState === 'error'" class="error-banner recovery-card" role="alert">
+        <div><strong>审核记录暂时不可用</strong><br>{{ reviewError }}<br><span class="hint">当前不会允许导出，已保留本地结果；恢复服务后可重试。</span></div>
+        <button type="button" class="btn sm" @click="loadReview">重试审核</button>
+        <button type="button" class="btn sm" @click="reloadCurrentJob">重新载入任务</button>
+        <button type="button" class="btn sm" @click="copyDiagnostic">复制诊断</button>
+      </div>
+      <div v-if="reviewSaveError" class="error-banner recovery-card" role="alert">
+        <div><strong>审核决定未确认保存</strong><br>{{ reviewSaveError }}</div>
+        <button type="button" class="btn sm" @click="saveReview">重试保存</button>
+        <button type="button" class="btn sm" @click="copyDiagnostic">复制诊断</button>
+      </div>
+      <div class="review-progress" aria-live="polite">
+        待处理 <span class="val">{{ pendingReviews.length }}</span> 项 · 已处理 <span class="val">{{ decidedReviews.length }}</span> 项
+      </div>
+      <div v-if="pendingReviews.length">
+        <div v-for="t in pendingReviews" :key="t.review_id" class="term-card" :class="{'blank-review': t.kind === 'blank_translation'}">
+          <template v-if="t.kind === 'blank_translation'">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div class="term-src">空译文确认</div>
+              <span class="item-meta" style="margin-left:auto;">第 {{ (t.rows[0] || 0) + 1 }} 行</span>
+            </div>
+            <div class="term-reason">这一行当前译文为空。确认后会保留为空，并允许导出；未确认前导出会被阻止。</div>
+            <div class="ctx">
+              <div class="ctx-head">原文</div>
+              <div class="ctx-row"><div class="ctx-src">{{ rowSource(t.rows[0]) }}</div><div class="ctx-tgt">（空）</div></div>
+            </div>
+            <div class="term-actions">
+              <button type="button" class="btn sm danger" @click="acceptReview(t)">确认空译文</button>
+              <button type="button" class="btn sm" @click="goStep(2)">返回填写译文</button>
+            </div>
+          </template>
+          <template v-else>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="term-src">{{ t.term }}</div>
+            <span class="item-meta" style="margin-left:auto;">影响 {{ t.rows.length }} 行</span>
+          </div>
           <div class="term-reason">原因：{{ t.reason || '未说明' }}</div>
           <div class="term-candidate" v-if="t.candidate">候选译法：{{ t.candidate }}</div>
+            <div v-if="t.rows && t.rows.length" class="ctx review-diff">
+            <div class="ctx-head review-diff-head">
+              <span>逐行差异 · 选择要修改的行</span>
+              <span>{{ (t.selectedRows || []).length }} / {{ t.rows.length }} 行</span>
+            </div>
+              <div v-for="r in t.rows" :key="r" class="ctx-row">
+              <label class="review-row-choice">
+                <input type="checkbox" :checked="reviewRowSelected(t, r)" @change="setReviewRowSelected(t, r, $event.target.checked)">
+                <span>修改第 {{ r + 1 }} 行</span>
+              </label>
+              <div class="ctx-src"><button type="button" class="rn" @click="goStep(2)" :title="'跳到翻译区第 ' + (r + 1) + ' 行'">#{{ r + 1 }}</button>{{ rowSource(r) }}</div>
+              <div class="ctx-tgt"><span class="diff-label">当前</span>{{ rowTranslation(r) || '（未翻译）' }}</div>
+              <div v-if="reviewRowSelected(t, r)" class="ctx-tgt proposed" :class="{unchanged: replacementPreview(t, r) === rowTranslation(r)}">
+                <span class="diff-label">应用后</span>{{ replacementPreview(t, r) || '（未翻译）' }}
+              </div>
+            </div>
+          </div>
           <div class="row" style="margin-top:8px;">
-            <label>最终译文（可修改）</label>
-            <input v-model="t.target">
+            <label :for="'review-target-' + t.review_id">最终译文（可修改）</label>
+            <input :id="'review-target-' + t.review_id" v-model="t.target">
+          </div>
+          <div class="review-selection-actions">
+            <span>仅会修改上方勾选的行；未选行保持原译文。</span>
+            <button type="button" class="btn sm" @click="selectAllReviewRows(t)">全选</button>
+            <button type="button" class="btn sm" @click="clearReviewRows(t)">全部取消</button>
           </div>
           <div class="term-actions">
-            <button class="btn sm ok" @click="acceptTerm(t)">✓ 接受并入库</button>
-            <button class="btn sm" @click="ignoreTerm(i)">忽略</button>
+            <button type="button" class="btn sm ok" @click="acceptReview(t)">✓ 接受并入库</button>
+            <button type="button" class="btn sm" @click="ignoreReview(t.review_id)">忽略</button>
             <select v-model="t.category" class="sm" style="width:auto;margin-left:auto;padding:4px 8px;font-size:12px;">
+              <option v-if="t.category && !glossaryCategories.includes(t.category)" :value="t.category">{{ t.category }}</option>
               <option v-for="c in glossaryCategories" :key="c" :value="c">{{ c }}</option>
               <option value="__new">＋ 新建类别…</option>
             </select>
@@ -712,30 +642,68 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
             <label>新类别名</label>
             <input v-model="t.newCategory" placeholder="如 汽车行业">
           </div>
+          </template>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
-          <button class="btn ok" @click="acceptAll">全部接受</button>
-          <button class="btn" @click="skipAll">全部忽略</button>
+          <button type="button" class="btn ok" @click="acceptAll">全部接受</button>
+          <button type="button" class="btn" @click="skipAll" :disabled="!pendingTerms.length">全部忽略术语</button>
         </div>
       </div>
-      <div v-else class="empty">
-        <span v-if="translated">已审核完毕 ✓ 可进入下一步</span>
+      <div v-else-if="reviewState === 'ready'" class="empty">
+        <span v-if="translated">已审核完毕 ✓ 可以进入导出</span>
         <span v-else>还没有不确定术语，先完成 AI 翻译</span>
+      </div>
+      <div v-if="decidedReviews.length" class="review-history" aria-live="polite">
+        <h4>已处理（{{ decidedReviews.length }}）</h4>
+        <div v-for="item in decidedReviews" :key="item.review_id" class="review-history-item">
+          <span>{{ item.kind === 'blank_translation' ? '空译文' : item.term }}</span>
+          <span class="tag" :class="item.decision === 'ignored' ? 'warn' : 'green'">{{ item.decision === 'edited' ? '已修改' : item.decision === 'accepted' ? '已接受' : '已忽略' }}</span>
+        </div>
       </div>
     </div>
 
     <!-- 步骤 5：导出 -->
     <div v-if="step === 4" class="card">
       <h3>导出</h3>
-      <p class="desc">确认译文后生成「仅译文」与「原文-译文对照」两份文件，样式完全保留，可直接下载。</p>
-      <p class="hint" style="margin-bottom:10px;">译文文本可在此直接编辑（AI 翻译或手动翻译的结果会自动填入）。<br>生成后文件会出现在任务区，随时可再次下载。</p>
-      <div class="row">
-        <label>译文文本（可直接编辑）</label>
-        <textarea v-model="translatedTxt" rows="10" style="font-family:monospace;"></textarea>
+      <p class="desc">确认译文后生成「仅译文」与「原文-译文对照」两份文件。软件会保留经验证支持的工作表结构与单元格样式；含多段局部格式的富文本单元格按下方所选方式处理。</p>
+      <p class="hint" style="margin-bottom:10px;">这里显示当前结构化译文预览。如需修改，请返回「翻译」步骤逐条编辑。<br>生成后文件会出现在任务区，随时可再次下载。</p>
+      <section class="export-policy-card" aria-labelledby="rich-text-policy-title">
+        <div class="export-policy-head">
+          <div>
+            <h4 id="rich-text-policy-title">富文本处理</h4>
+            <p>富文本是同一单元格里带有多段字体、颜色或粗细设置的文字。软件不会静默删除这些局部格式。</p>
+          </div>
+          <button type="button" class="btn sm" @click="chooseRichTextPolicy(false)">选择处理方式</button>
+        </div>
+        <ol class="export-policy-list">
+          <li :class="{active: richTextPolicy === 'preserve_original'}">
+            <strong>保留原文（preserve_original）</strong>
+            <span>受影响的源单元格保持原文和局部格式，不写入译文；其他单元格正常导出。</span>
+          </li>
+          <li :class="{active: richTextPolicy === 'flatten'}">
+            <strong>转为纯文本（flatten，默认）</strong>
+            <span>用纯文本译文替换整个富文本单元格，单元格内的局部字体、颜色等格式会丢失。</span>
+          </li>
+        </ol>
+      </section>
+      <div v-if="!canExport" class="error-banner recovery-card" role="alert">
+        <div><strong>当前不能导出</strong><br>{{ exportBlockReason }}</div>
+        <button type="button" class="btn sm" @click="goStep(3)">返回审核</button>
+        <button v-if="reviewState === 'error'" type="button" class="btn sm" @click="loadReview">重试恢复</button>
       </div>
-      <button class="btn primary" @click="doApply" :disabled="!currentJob || applying">
+      <div class="row">
+        <label>译文预览（只读）</label>
+        <textarea :value="translatedTxt" rows="10" readonly style="font-family:monospace;"></textarea>
+      </div>
+      <button class="btn primary" @click="doApply" :disabled="!currentJob || applying || !canExport">
         {{ applying ? '导出中…' : '生成输出文件' }}
       </button>
+      <div v-if="applyError" class="error-banner recovery-card" role="alert">
+        <div><strong>输出文件未生成</strong><br>{{ applyError }}<br><span class="hint">译文与审核记录仍保留在当前任务中。</span></div>
+        <button type="button" class="btn sm" @click="doApply" :disabled="applying || !canExport">重试导出</button>
+        <button type="button" class="btn sm" @click="chooseRichTextPolicy(true)" :disabled="applying || !canExport">选择方式后重试</button>
+        <button type="button" class="btn sm" @click="copyDiagnostic">复制诊断</button>
+      </div>
       <div v-if="applyInfo" class="list" style="margin-top:16px;">
         <div v-for="(item, kind) in applyDownloads" :key="kind" class="list-item">
           <div class="item-main">
@@ -749,1010 +717,46 @@ textarea { resize:vertical; min-height:60px; font-family:"Cascadia Code", Consol
     </template>
   </div>
 
-  <div id="toast" :class="{show: toastMsg}">{{ toastMsg }}</div>
+  <div id="toast-wrap" role="status" aria-live="polite" aria-atomic="false">
+    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">
+      <span class="ico">{{ t.icon }}</span><span>{{ t.msg }}</span>
+    </div>
+  </div>
+
+  <!-- 通用模态框 -->
+  <div v-if="modal" class="modal-overlay" @click.self="modalCancel">
+    <div ref="modalBox" class="modal" :class="{wide: modal.wide}" role="dialog" aria-modal="true" :aria-labelledby="modal.id + '-title'" :aria-describedby="modal.kind === 'rich-text-policy' ? modal.id + '-description' : null">
+      <div class="modal-head"><h3 :id="modal.id + '-title'">{{ modal.title }}</h3></div>
+      <div class="modal-body">
+        <template v-if="modal.kind === 'confirm'">
+          <p class="msg" :class="{danger: modal.danger}">{{ modal.message }}</p>
+        </template>
+        <template v-else-if="modal.kind === 'form'">
+          <div v-for="f in modal.fields" :key="f.key" class="row">
+            <label>{{ f.label }}</label>
+            <input v-model="f.value" :type="f.type || 'text'" :placeholder="f.placeholder || ''" :data-modal-autofocus="f.key === modal.fields[0].key" @keyup.enter="modalOk">
+          </div>
+          <p v-if="modal.error" class="hint warn">{{ modal.error }}</p>
+        </template>
+        <template v-else-if="modal.kind === 'rich-text-policy'">
+          <p :id="modal.id + '-description'" class="msg">只有含多个局部格式片段的单元格会受此选择影响。请选择你能接受的处理结果。</p>
+          <fieldset class="policy-options">
+            <legend>富文本单元格处理方式</legend>
+            <label v-for="option in modal.options" :key="option.value" class="policy-option" :class="{active: modal.value === option.value}">
+              <input type="radio" name="rich-text-policy" v-model="modal.value" :value="option.value" :data-modal-autofocus="option.value === modal.value ? 'true' : null">
+              <span><strong>{{ option.title }}</strong><small>{{ option.description }}</small></span>
+            </label>
+          </fieldset>
+        </template>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" @click="modalCancel">{{ modal.kind === 'rich-text-policy' ? '取消，不更改' : '取消' }}</button>
+        <button type="button" class="btn" :class="modal.danger ? 'danger' : 'primary'" data-modal-autofocus @click="modalOk">{{ modal.okText || '确定' }}</button>
+      </div>
+    </div>
+  </div>
 </div>
 
-<script>
-const { createApp } = Vue;
-
-createApp({
-  data() {
-    return {
-      view: 'workflow',
-      steps: ['任务', '提取', '翻译', '审核', '导出'],
-      step: 0,
-      jobs: [],
-      currentJob: null,
-      newJobInput: '',
-      newJobName: '',
-      extracting: false,
-      extractInfo: null,
-      sourceTexts: [],
-      sourceText: '',
-      translateMode: 'ai',
-      manualTranslations: '',
-      manualMappings: [],
-      editingManualRow: null,
-      manualLoadedOnce: false,
-      manualPreview: [],
-      showManualPreview: false,
-      engine: 'google',
-      activeProviderKey: 'openai',
-      activeModel: 'gpt-4o-mini',
-      uploadingFile: false,
-      translating: false,
-      translateProgress: 0,
-      translateTotal: 0,
-      translateDone: 0,
-      translateChunks: 0,
-      translateThinking: {},
-      translateBuffer: {},
-      translateResults: [],
-      translateSources: [],       // 待译原文（与 translateResults 按 id 对应）
-      translateBlocksList: [],    // 每块首行号（meta 下发）
-      translateBlocks: [],        // 已完成的思考块 [{base, text}]
-      translateBlockSaved: new Set(),
-      selectedTermFilter: null,   // 右侧术语筛选（null=全部）
-      editingRow: null,           // 正在编辑译文的行 id
-      glossaryCategories: [],
-      selectedCategories: [],
-      pendingTerms: [],
-      translated: false,
-      applying: false,
-      applyInfo: null,
-      translatedTxt: '',
-      toastMsg: '',
-      toastTimer: null,
-      // 术语库管理
-      glossaryCategoryFilter: '',
-      showAddTerm: false,
-      newTerm: {category: '', source: '', target: '', note: ''},
-      glossaryDetail: {},
-      // 设置
-      settings: {ai: {engine: 'google', providers: {}, active_provider: 'openai', mirrors: [], source_lang: 'en', target_lang: 'zh-CN', concurrency: 4}},
-      mirrorsText: '',
-      customMirrors: null,
-      testingMirrors: false,
-      mirrorTestResults: [],
-      // OpenRouter 模型拉取
-      openrouterLoading: false,
-      openrouterModels: [],
-      expandedModel: '',  // "providerKey/modelName"，当前展开的模型（默认收起）
-    };
-  },
-  computed: {
-    filteredGlossary() {
-      const cats = this.glossaryDetail.categories || {};
-      const names = Object.keys(cats).sort();
-      const filtered = this.glossaryCategoryFilter ? [this.glossaryCategoryFilter] : names;
-      return filtered.filter(n => cats[n]).map(name => ({name, entries: cats[name]}));
-    },
-    // 当前供应商的模型列表（由 model_configs 键驱动）
-    activeProviderModels() {
-      return this.providerModelNames(this.activeProviderKey);
-    },
-    // 手动翻译：映射从译文文本派生（大文本框是唯一真相源，列表是修正视图）
-    manualMappings() {
-      const targets = this.manualTranslations.split('\n');
-      return this.sourceTexts.map((src, i) => ({source: src, target: targets[i] || ''}));
-    },
-    // 手动翻译行数校验：严格按行比对，缺的行号列出
-    manualLineStatus() {
-      const lines = this.manualTranslations === '' ? [] : this.manualTranslations.split('\n');
-      const expected = this.sourceTexts.length;
-      const count = lines.length;
-      const diff = count - expected;
-      let missing = '';
-      if (diff < 0) {
-        const missingRows = [];
-        for (let i = 0; i < expected; i++) {
-          if (i >= count || (lines[i] || '').trim() === '') missingRows.push(i + 1);
-        }
-        missing = missingRows.join('、');
-      }
-      return {count, expected, diff, missing};
-    },
-    // 逐行对照映射：原文 + 译文（翻译中显示所在块的流式增量）
-    translateRows() {
-      const blocks = this.translateBlocksList || [];
-      const blockOf = (i) => { let b = 0; for (const x of blocks) { if (x > i) break; b = x; } return b; };
-      return this.translateSources.map((src, i) => {
-        const r = this.translateResults.find(x => x.id === i);
-        const base = blockOf(i);
-        return {
-          id: i,
-          source: src,
-          translation: r ? r.translation : '',
-          uncertain: r ? (r.uncertain_terms || []) : [],
-          buffer: this.translating && this.translateBuffer[base] !== undefined ? this.translateBuffer[base] : undefined,
-        };
-      });
-    },
-    // 翻译中实时 append 的行（已开始的行：翻译中 + done + buffer），完成后显示全部
-    visibleTranslateRows() {
-      if (!this.translating) return this.filteredTranslateRows;
-      const rows = this.translateRows;
-      const doneCount = this.translateDone || 0;
-      const bufferBases = Object.keys(this.translateBuffer).map(Number);
-      const inProgress = rows.filter(r => r.buffer !== undefined);
-      const visible = [];
-      const seen = new Set();
-      for (const r of inProgress) { visible.push(r); seen.add(r.id); }
-      // 已完成的按 id 追加（保持顺序）
-      for (let i = 0; i < doneCount; i++) {
-        if (!seen.has(i)) { const r = rows[i]; if (r) { visible.push(r); seen.add(i); } }
-      }
-      // 术语筛选时只保留匹配的
-      if (this.selectedTermFilter) {
-        return visible.filter(r => r.uncertain.some(t => t.term === this.selectedTermFilter));
-      }
-      return visible;
-    },
-    // 术语筛选后的行
-    filteredTranslateRows() {
-      if (!this.selectedTermFilter) return this.translateRows;
-      return this.translateRows.filter(r => r.uncertain.some(t => t.term === this.selectedTermFilter));
-    },
-    // 不确定术语聚合：term → {term, reason, candidate, rows}
-    termAggregates() {
-      const map = {};
-      for (const r of this.translateResults) {
-        for (const t of (r.uncertain_terms || [])) {
-          if (!t.term) continue;
-          if (!map[t.term]) map[t.term] = {term: t.term, reason: t.reason, candidate: t.candidate, rows: []};
-          map[t.term].rows.push(r.id);
-        }
-      }
-      return Object.values(map)
-        .map(v => ({...v, count: v.rows.length}))
-        .sort((a, b) => b.count - a.count);
-    },
-    // 翻译中正在思考的块（thinking 增量实时显示）
-    activeThinkingText() {
-      const keys = Object.keys(this.translateThinking);
-      return keys.length ? this.translateThinking[keys[keys.length - 1]] : '';
-    },
-    thinkingCount() {
-      return this.translateBlocks.length + (this.translating && this.activeThinkingText ? 1 : 0);
-    },
-    applyDownloads() {
-      if (!this.applyInfo) return [];
-      const items = [];
-      if (this.applyInfo.translated_output) {
-        items.push({
-          kind: 'translated', label: '仅译文版',
-          path: this.applyInfo.translated_output,
-          url: `/api/jobs/${this.currentJob}/download?kind=translated`,
-          filename: (this.applyInfo.translated_output || '').split('/').pop(),
-        });
-      }
-      if (this.applyInfo.bilingual_output) {
-        items.push({
-          kind: 'bilingual', label: '原文-译文对照版',
-          path: this.applyInfo.bilingual_output,
-          url: `/api/jobs/${this.currentJob}/download?kind=bilingual`,
-          filename: (this.applyInfo.bilingual_output || '').split('/').pop(),
-        });
-      }
-      return items;
-    },
-  },
-  methods: {
-    toast(msg) {
-      this.toastMsg = msg;
-      clearTimeout(this.toastTimer);
-      this.toastTimer = setTimeout(() => { this.toastMsg = ''; }, 2500);
-    },
-    async api(url, opts = {}) {
-      const r = await fetch(url, { headers: {'Content-Type': 'application/json'}, ...opts });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.detail || r.statusText);
-      }
-      return r.json();
-    },
-    async refreshJobs() {
-      try {
-        this.jobs = await this.api('/api/jobs');
-        this.loadGlossary();
-      } catch (e) { this.toast('加载任务失败: ' + e.message); }
-    },
-    async loadGlossary() {
-      try {
-        const g = await this.api('/api/glossary');
-        this.glossaryCategories = Object.keys(g.categories || {});
-        // 默认全部选中
-        this.selectedCategories = [...this.glossaryCategories];
-      } catch (e) { this.toast('加载术语库失败'); }
-    },
-    async loadGlossaryDetail() {
-      try {
-        this.glossaryDetail = await this.api('/api/glossary');
-        if (!this.glossaryCategories.length) {
-          this.glossaryCategories = Object.keys(this.glossaryDetail.categories || {});
-        }
-      } catch (e) { this.toast('加载术语库失败'); }
-    },
-    async addTerm() {
-      const t = this.newTerm;
-      if (!t.source || !t.target) { this.toast('原文和译文必填'); return; }
-      try {
-        await this.api('/api/glossary/terms', {
-          method: 'POST',
-          body: JSON.stringify({category: t.category || '默认', source: t.source, target: t.target, note: t.note || ''}),
-        });
-        this.newTerm = {category: '', source: '', target: '', note: ''};
-        this.showAddTerm = false;
-        await this.loadGlossaryDetail();
-        await this.loadGlossary();
-        this.toast('术语已新增');
-      } catch (e) { this.toast('新增失败: ' + e.message); }
-    },
-    async editTerm(category, entry) {
-      const target = prompt('编辑译文（' + entry.source + '）:', entry.target);
-      if (target === null) return;
-      try {
-        await this.api('/api/glossary/terms', {
-          method: 'PUT',
-          body: JSON.stringify({category, source: entry.source, target: target.trim(), note: entry.note || ''}),
-        });
-        await this.loadGlossaryDetail();
-        this.toast('已更新');
-      } catch (e) { this.toast('更新失败: ' + e.message); }
-    },
-    async deleteTerm(category, source) {
-      if (!confirm(`删除术语「${source}」？`)) return;
-      try {
-        await this.api(`/api/glossary/terms?category=${encodeURIComponent(category)}&source=${encodeURIComponent(source)}`, {method: 'DELETE'});
-        await this.loadGlossaryDetail();
-        await this.loadGlossary();
-        this.toast('已删除');
-      } catch (e) { this.toast('删除失败: ' + e.message); }
-    },
-    async onFileSelected(e) {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      this.uploadingFile = true;
-      try {
-        // 浏览器原生文件选择器 → 上传到后端 → 返回服务器路径
-        const fd = new FormData();
-        fd.append('file', file);
-        const r = await fetch('/api/upload', {method: 'POST', body: fd});
-        if (!r.ok) {
-          const d = await r.json().catch(() => ({}));
-          throw new Error(d.detail || r.statusText);
-        }
-        const res = await r.json();
-        this.newJobInput = res.path;
-        this.toast('文件已选择');
-      } catch (err) { this.toast('上传失败: ' + err.message); }
-      finally {
-        this.uploadingFile = false;
-        e.target.value = '';  // 允许重复选同一文件
-      }
-    },
-    async loadSettings() {
-      try {
-        this.settings = await this.api('/api/settings');
-        this.mirrorsText = (this.settings.ai.mirrors || []).join('\n');
-        this.activeProviderKey = this.settings.ai.active_provider || 'openai';
-        this.engine = this.settings.ai.engine || 'google';
-        const p = this.settings.ai.providers[this.activeProviderKey];
-        const names = this.providerModelNames(this.activeProviderKey);
-        if (names.length) {
-          // 记住上次选的模型（存于 ai.active_model），否则用第一个
-          const last = this.settings.ai.active_model;
-          this.activeModel = (last && names.includes(last)) ? last : names[0];
-          this.expandedModel = this.activeProviderKey + '/' + this.activeModel;
-        }
-      } catch (e) { this.toast('加载设置失败'); }
-    },
-    async saveSettings() {
-      try {
-        this.settings = await this.api('/api/settings', {
-          method: 'PUT',
-          body: JSON.stringify(this.settings),
-        });
-      } catch (e) { this.toast('保存设置失败: ' + e.message); }
-    },
-    async updateProvider(key, field, value) {
-      const p = this.settings.ai.providers[key];
-      if (!p) return;
-      p[field] = value;
-      await this.saveSettings();
-    },
-    // ---------- 模型行（摘要 + 展开） ----------
-    providerModelNames(key) {
-      const p = this.settings.ai.providers[key];
-      if (!p) return [];
-      p.model_configs = p.model_configs || {};
-      return Object.keys(p.model_configs);
-    },
-    isExpanded(key, m) {
-      return this.expandedModel === key + '/' + m;
-    },
-    toggleExpand(key, m) {
-      this.expandedModel = this.expandedModel === key + '/' + m ? '' : key + '/' + m;
-    },
-    modelSummary(key, m) {
-      const mc = this.modelConfigOf(key, m);
-      const parts = [];
-      if (mc.model_context) parts.push(Math.round(mc.model_context / 1000) + 'k');
-      if (mc.temperature != null) parts.push('temp ' + mc.temperature);
-      if (mc.max_tokens) parts.push('out ' + mc.max_tokens);
-      if (mc.thinking && mc.thinking.type === 'enabled') parts.push('思考');
-      if (mc.reasoning_effort) parts.push('effort ' + mc.reasoning_effort);
-      return parts.length ? parts.join(' · ') : '（未配置，点击展开设置）';
-    },
-    async setActiveModelFor(key, m) {
-      if (key !== this.activeProviderKey) {
-        this.settings.ai.active_provider = key;
-        this.activeProviderKey = key;
-      }
-      this.activeModel = m;
-      this.settings.ai.active_model = m;
-      await this.saveSettings();
-    },
-    async addModel(key) {
-      const name = prompt('模型名（如 deepseek-chat）:', '');
-      if (!name || !name.trim()) return;
-      const p = this.settings.ai.providers[key];
-      p.model_configs = p.model_configs || {};
-      const n = name.trim();
-      if (p.model_configs[n]) { this.toast('模型已存在'); return; }
-      p.model_configs[n] = {model_context: 128000, temperature: 0.6};
-      this.unmarkRemoved(key, n);
-      if (key === this.activeProviderKey) {
-        this.settings.ai.active_model = n;
-        this.activeModel = n;
-      }
-      this.expandedModel = key + '/' + n;
-      await this.saveSettings();
-    },
-    async removeModel(key, m) {
-      if (!confirm(`删除模型「${m}」的配置？`)) return;
-      const p = this.settings.ai.providers[key];
-      if (p.model_configs) delete p.model_configs[m];
-      // 记录到 removed_models，防止 server 深合并把默认模型又加回来
-      p.removed_models = p.removed_models || [];
-      if (!p.removed_models.includes(m)) p.removed_models.push(m);
-      if (key === this.activeProviderKey && this.activeModel === m) {
-        const rest = Object.keys(p.model_configs || {});
-        this.activeModel = rest.length ? rest[0] : '';
-        this.settings.ai.active_model = this.activeModel;
-      }
-      if (this.expandedModel === key + '/' + m) this.expandedModel = '';
-      await this.saveSettings();
-      this.toast(`已删除模型「${m}」`);
-    },
-    unmarkRemoved(key, m) {
-      // 重新添加时清除删除标记
-      const p = this.settings.ai.providers[key];
-      if (p && p.removed_models) p.removed_models = p.removed_models.filter(x => x !== m);
-    },
-    async setActiveProvider(key) {
-      this.settings.ai.active_provider = key;
-      this.activeProviderKey = key;
-      const names = this.providerModelNames(key);
-      if (names.length) {
-        this.activeModel = names[0];
-        this.expandedModel = key + '/' + names[0];
-      }
-      await this.saveSettings();
-    },
-    async changeModel(m) {
-      // 切换模型时记住选择，供下次打开恢复
-      this.activeModel = m;
-      this.settings.ai.active_model = m;
-      await this.saveSettings();
-    },
-    async addProvider() {
-      const name = prompt('供应商名称:', '新供应商');
-      if (!name) return;
-      const key = 'custom' + Date.now();
-      this.settings.ai.providers[key] = {
-        name, base_url: 'https://api.openai.com/v1', api_key: '',
-        default_model: '',
-        model_configs: {},
-      };
-      await this.saveSettings();
-    },
-    // ---------- 模型级配置 ----------
-    modelConfigOf(key, m) {
-      const p = this.settings.ai.providers[key];
-      if (!p) return {};
-      p.model_configs = p.model_configs || {};
-      if (!p.model_configs[m]) p.model_configs[m] = {};
-      return p.model_configs[m];
-    },
-    modelConfigValue(key, m, field, fallback) {
-      const mc = this.modelConfigOf(key, m);
-      const v = mc[field];
-      if (v === undefined || v === null) return fallback;
-      // thinking 存的是 {type: "enabled"/"disabled"}，下拉需要字符串值
-      if (field === 'thinking' && typeof v === 'object') return v.type || fallback;
-      return v;
-    },
-    modelConfigExtra(key, m) {
-      const mc = this.modelConfigOf(key, m);
-      return mc.extra ? JSON.stringify(mc.extra, null, 0) : '';
-    },
-    async updateModelConfig(key, m, field, value, kind) {
-      const mc = this.modelConfigOf(key, m);
-      if (kind === 'number') {
-        const n = value === '' || value === null ? null : Number(value);
-        if (n !== null && (isNaN(n) || n < 0)) { this.toast('无效数值'); return; }
-        mc[field] = n;
-      } else if (field === 'thinking') {
-        mc[field] = value === '' ? undefined : {type: value};
-      } else {
-        mc[field] = value === '' ? undefined : value;
-      }
-      await this.saveSettings();
-    },
-    async updateModelConfigExtra(key, m, text) {
-      const mc = this.modelConfigOf(key, m);
-      const t = text.trim();
-      if (!t) { delete mc.extra; await this.saveSettings(); return; }
-      try { mc.extra = JSON.parse(t); }
-      catch (e) { this.toast('JSON 格式错误: ' + e.message); return; }
-      await this.saveSettings();
-    },
-    // ---------- OpenRouter ----------
-    async loadOpenRouter() {
-      this.openrouterLoading = true;
-      try {
-        const res = await this.api('/api/openrouter/models');
-        this.openrouterModels = res.models || [];
-        if (!this.openrouterModels.length) this.toast('OpenRouter 返回空列表');
-      } catch (e) { this.toast('拉取失败: ' + e.message); }
-      finally { this.openrouterLoading = false; }
-    },
-    async applyOpenRouterModel(om) {
-      // 把 OpenRouter 模型加入当前供应商（模型名取 id 去供应商前缀），填完整默认配置
-      const key = this.activeProviderKey;
-      const p = this.settings.ai.providers[key];
-      if (!p) return;
-      const modelName = om.id.includes('/') ? om.id.split('/').pop() : om.id;
-      p.model_configs = p.model_configs || {};
-      p.model_configs[modelName] = p.model_configs[modelName] || {};
-      this.unmarkRemoved(key, modelName);
-      this.fillModelFromOpenRouter(key, modelName, om);
-      this.settings.ai.active_model = modelName;
-      this.activeModel = modelName;
-      this.expandedModel = key + '/' + modelName;
-      await this.saveSettings();
-      const parts = [];
-      if (om.context_length) parts.push('上下文 ' + Math.round(om.context_length / 1000) + 'k');
-      if (om.max_completion_tokens) parts.push('输出上限 ' + om.max_completion_tokens);
-      if (om.supports_reasoning) parts.push('推理开启');
-      this.toast(`已应用 ${om.id}：${parts.join('，') || '（无可用元数据）'}`);
-    },
-    // 用 OpenRouter 模型元数据填充完整默认配置：按模型真实能力填满，不保守
-    fillModelFromOpenRouter(key, m, om) {
-      const mc = this.modelConfigOf(key, m);
-      // 上下文：模型真实能力
-      if (om.context_length) mc.model_context = om.context_length;
-      // 输出上限：OpenRouter 报告的 max_completion_tokens（若模型支持 max_tokens 请求参数）
-      if (om.max_completion_tokens) {
-        mc.max_tokens = om.max_completion_tokens;
-      }
-      // 默认温度（OpenRouter 报告的模型默认值）
-      if (om.default_temperature != null) mc.temperature = om.default_temperature;
-      // 推理：用 OpenRouter reasoning 元数据（supported_efforts / default_effort）
-      if (om.supports_reasoning) {
-        mc.thinking = {type: 'enabled'};
-      }
-      const r = om.reasoning;
-      if (r && typeof r === 'object') {
-        if (Array.isArray(r.supported_efforts) && r.supported_efforts.length) {
-          // 存支持级别（UI 下拉用，下划线前缀不传给 API）
-          mc._effort_options = r.supported_efforts;
-        }
-        if (r.default_effort) {
-          mc.reasoning_effort = r.default_effort;
-        }
-      }
-      return mc;
-    },
-    // 当前模型支持哪些 effort 级别（下拉选项）
-    modelEffortOptions(key, m) {
-      const mc = this.modelConfigOf(key, m);
-      return (mc._effort_options && mc._effort_options.length)
-        ? mc._effort_options
-        : ['low', 'medium', 'high', 'max'];
-    },
-    async applyOpenRouterToModel(key, m) {
-      // 单个模型：按名称匹配 OpenRouter 模型，填完整默认配置
-      // 若还没拉取过模型列表，先自动拉取
-      if (!this.openrouterModels.length) {
-        this.toast('正在拉取 OpenRouter 模型列表…');
-        await this.loadOpenRouter();
-        if (!this.openrouterModels.length) { this.toast('拉取失败，无法填充'); return; }
-      }
-      let found = this.openrouterModels.find(x => x.id.endsWith('/' + m) || x.id === m);
-      if (!found) {
-        this.toast(`OpenRouter 中未找到「${m}」`);
-        return;
-      }
-      this.fillModelFromOpenRouter(key, m, found);
-      await this.saveSettings();
-      const parts = [];
-      if (found.context_length) parts.push('上下文 ' + Math.round(found.context_length / 1000) + 'k');
-      if (found.max_completion_tokens) parts.push('输出上限 ' + found.max_completion_tokens);
-      if (found.supports_reasoning) parts.push('推理开启');
-      this.toast(`已用 OpenRouter 配置填充 ${m}：${parts.join('，')}`);
-    },
-    async removeProvider(key) {
-      if (Object.keys(this.settings.ai.providers).length <= 1) {
-        this.toast('至少保留一个供应商');
-        return;
-      }
-      if (!confirm(`删除供应商「${this.settings.ai.providers[key].name}」？`)) return;
-      delete this.settings.ai.providers[key];
-      if (this.activeProviderKey === key) {
-        this.activeProviderKey = Object.keys(this.settings.ai.providers)[0];
-      }
-      await this.saveSettings();
-    },
-    onEngineChange() {
-      this.settings.ai.engine = this.engine;
-      this.saveSettings();
-    },
-    onProviderChange() {
-      const names = this.providerModelNames(this.activeProviderKey);
-      if (names.length) {
-        const last = this.settings.ai.active_model;
-        this.activeModel = (last && names.includes(last)) ? last : names[0];
-      }
-    },
-    async deleteCategory(name) {
-      if (!confirm(`删除整个类别「${name}」及其 ${this.glossaryDetail.categories[name] ? this.glossaryDetail.categories[name].length : 0} 个术语？`)) return;
-      try {
-        await this.api(`/api/glossary/categories?category=${encodeURIComponent(name)}`, {method: 'DELETE'});
-        await this.loadGlossaryDetail();
-        await this.loadGlossary();
-        this.toast('类别已删除');
-      } catch (e) { this.toast('删除失败: ' + e.message); }
-    },
-    async loadMirrors() {
-      try {
-        const r = await this.api('/api/mirrors');
-        this.mirrorsText = r.mirrors.join('\n');
-      } catch (e) { this.toast('加载镜像站失败'); }
-    },
-    async saveMirrors() {
-      const lines = this.mirrorsText.split('\n').map(s => s.trim()).filter(Boolean);
-      if (!lines.length) { this.toast('镜像站列表不能为空'); return; }
-      this.settings.ai.mirrors = lines;
-      this.customMirrors = lines;
-      await this.saveSettings();
-      this.toast('镜像站已保存');
-    },
-    async testMirrors() {
-      this.testingMirrors = true;
-      this.mirrorTestResults = [];
-      const mirrors = this.mirrorsText.split('\n').map(s => s.trim()).filter(Boolean);
-      if (!mirrors.length) { this.testingMirrors = false; this.toast('请先填写镜像站'); return; }
-      try {
-        const r = await this.api('/api/mirrors/test', {method: 'POST', body: JSON.stringify({mirrors})});
-        this.mirrorTestResults = r.results;
-        this.toast('镜像站测试完成');
-      } catch (e) { this.toast('测试失败: ' + e.message); }
-      finally { this.testingMirrors = false; }
-    },
-    async createJob() {
-      try {
-        await this.api('/api/jobs', {
-          method: 'POST',
-          body: JSON.stringify({job: this.newJobName || null, input: this.newJobInput, sep: '\\n'}),
-        });
-        this.newJobInput = ''; this.newJobName = '';
-        await this.refreshJobs();
-        this.toast('任务已创建');
-      } catch (e) { this.toast('创建失败: ' + e.message); }
-    },
-    async selectJob(j) {
-      this.currentJob = j.job;
-      // 根据任务已有进度跳转到合适步骤，并恢复状态
-      if (j.output_translated) {
-        this.step = 4;  // 已导出
-      } else if (j.translated_txt && (j.stages.includes('已翻译') || j.stages.includes('已导出'))) {
-        this.step = 3;  // 已翻译 → 审核
-      } else if (j.stages.includes('已提取')) {
-        this.step = 2;  // 已提取 → 翻译
-      } else {
-        this.step = 1;  // 待提取
-      }
-      // 提取过就恢复原文预览（任何步骤都需要）
-      if (j.stages.includes('已提取')) {
-        await this.loadSourcePreview();
-      }
-      // 恢复已保存的 AI 输出（逐行译文/不确定术语/思考）
-      await this.restoreAiOutput();
-      this.toast('已选择任务: ' + j.job);
-    },
-    async restoreAiOutput() {
-      try {
-        const d = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
-        if (d.results && d.results.length) {
-          this.translateResults = d.results;
-          this.translateBlocks = d.blocks || [];
-          this.translateBlocksList = (d.blocks || []).map(b => b.base);
-          this.translateSources = this.sourceTexts;
-          this.translatedTxt = d.results.map(r => r.translation).join('\n');
-          this.pendingTerms = this.collectTerms(d.results);
-          this.translated = true;
-        }
-      } catch (e) { /* 无保存输出则忽略 */ }
-    },
-    async doExtract() {
-      this.extracting = true;
-      try {
-        this.extractInfo = await this.api(`/api/jobs/${this.currentJob}/extract`, {method: 'POST'});
-        await this.loadSourcePreview();
-        this.toast(`提取完成，${this.extractInfo.unique_texts} 条文本`);
-        this.step = 2;
-      } catch (e) { this.toast('提取失败: ' + e.message); }
-      finally { this.extracting = false; }
-    },
-    async loadSourcePreview() {
-      // 提取后加载原文预览（可查看/复制）
-      try {
-        const src = await this.api(`/api/jobs/${this.currentJob}/source`);
-        this.sourceTexts = src.texts;
-        this.sourceText = src.texts.join('\n');
-      } catch (e) { /* 忽略，预览非关键 */ }
-    },
-    async copySource() {
-      try {
-        await navigator.clipboard.writeText(this.sourceText);
-        this.toast('原文已复制');
-      } catch (e) {
-        // 降级：用临时 textarea 复制
-        const ta = document.createElement('textarea');
-        ta.value = this.sourceText;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-        this.toast('原文已复制');
-      }
-    },
-    async switchToManual() {
-      // 切到手动模式：若当前没有译文（或没加载过），自动加载已有译文作为起点
-      const hadLoaded = this.manualLoadedOnce;
-      this.translateMode = 'manual';
-      if (!hadLoaded) {
-        this.manualLoadedOnce = true;
-        await this.loadManualStart();
-      }
-    },
-    // 加载已有译文作为手动编辑起点（AI 结果优先，回退 translated.txt）
-    // 预览：读取已保存的译文（ai_output 优先，回退 translated.txt）作为只读对照，不覆盖粘贴区
-    async previewManual() {
-      try {
-        const d = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
-        let savedText = null;
-        if (d.results && d.results.length) {
-          savedText = d.results.map(r => r.translation).join('\n');
-        } else {
-          const r = await this.api(`/api/jobs/${this.currentJob}/translated_file`);
-          if (r.text) savedText = r.text.trimEnd();
-        }
-        if (savedText === null) { this.toast('还没有已保存的译文'); return; }
-        const lines = savedText.split('\n');
-        this.manualPreview = this.sourceTexts.map((src, i) => ({
-          source: src,
-          target: lines[i] || '',
-        }));
-        this.showManualPreview = true;
-        this.toast('已加载已保存译文（只读预览，不影响下方粘贴区）');
-      } catch (e) { this.toast('预览失败: ' + e.message); }
-    },
-    async loadManualStart() {
-      try {
-        const d = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
-        if (d.results && d.results.length) {
-          this.manualTranslations = d.results.map(r => r.translation).join('\n');
-          this.toast('已加载 AI 译文，可逐条修改');
-        } else {
-          const r = await this.api(`/api/jobs/${this.currentJob}/translated_file`);
-          this.manualTranslations = r.text ? r.text.trimEnd() : '';
-          this.toast(r.text ? '已加载已有译文' : '尚无译文，粘贴外部 AI 翻译结果');
-        }
-      } catch (e) { this.toast('读取失败: ' + e.message); }
-    },
-    startManualEdit(i) {
-      this.editingManualRow = i;
-      this.$nextTick(() => {
-        const els = Array.isArray(this.$refs.manualEditor) ? this.$refs.manualEditor : [this.$refs.manualEditor];
-        els.forEach(e => { if (e) { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; } });
-        setTimeout(() => { els.forEach(e => { if (e) e.focus(); }); }, 0);
-      });
-    },
-    saveManualRow(i, ev) {
-      // 单向写回：修正视图 → 大文本框（唯一真相源）
-      const targets = this.manualTranslations.split('\n');
-      targets[i] = ev.target.value;
-      this.manualTranslations = targets.join('\n');
-      this.editingManualRow = null;
-    },
-    async saveManualTranslations() {
-      // 保存译文 + 严格行数校验 + 双写（ai_output + translated）→ 自动跳下一步
-      if (this.manualLineStatus.diff !== 0) {
-        this.toast(`⚠ 译文 ${this.manualLineStatus.count} 行 / 原文 ${this.manualLineStatus.expected} 行，请核对后再保存`);
-        return;
-      }
-      try {
-        // 构造与 AI 结果同构的 results（保留原不确定术语/思考）
-        const prev = await this.api(`/api/jobs/${this.currentJob}/ai_output`);
-        const prevResults = (prev.results || []);
-        const results = this.sourceTexts.map((src, i) => {
-          const lines = this.manualTranslations.split('\n');
-          const prevOne = prevResults.find(r => r.id === i) || {};
-          return {
-            id: i,
-            translation: lines[i] || '',
-            uncertain_terms: prevOne.uncertain_terms || [],
-          };
-        });
-        await this.api(`/api/jobs/${this.currentJob}/ai_output`, {
-          method: 'POST',
-          body: JSON.stringify({results, blocks: prev.blocks || []}),
-        });
-        await this.api(`/api/jobs/${this.currentJob}/translated`, {
-          method: 'POST',
-          body: JSON.stringify({text: this.manualTranslations}),
-        });
-        this.translatedTxt = this.manualTranslations;
-        this.translated = true;
-        this.toast('译文已保存');
-        this.step = 4;  // 自动跳到导出
-      } catch (e) { this.toast('保存失败: ' + e.message); }
-    },
-    async deleteJob(j) {
-      if (!confirm(`删除任务「${j.job}」及其所有文件？`)) return;
-      try {
-        await this.api(`/api/jobs/${j.job}`, {method: 'DELETE'});
-        this.jobs = this.jobs.filter(x => x.job !== j.job);
-        if (this.currentJob === j.job) this.currentJob = null;
-        this.toast('任务已删除');
-      } catch (e) { this.toast('删除失败: ' + e.message); }
-    },
-    async doTranslate() {
-      this.translating = true; this.translateProgress = 0; this.translateResults = [];
-      this.translateTotal = 0; this.translateDone = 0;
-      this.translateThinking = {};  // 块 base → 思考增量（翻译中实时显示）
-      this.translateBuffer = {};    // 块 base → 内容增量
-      this.translateBlocks = [];    // 已完成的思考块
-      this.translateBlockSaved = new Set();
-      this.selectedTermFilter = null;
-      this.editingRow = null;
-      let texts;
-      try {
-        texts = await this.loadSourceTexts();
-      } catch (e) {
-        this.translating = false;
-        this.toast('读取原文失败: ' + e.message);
-        return;
-      }
-      if (!texts.length) { this.translating = false; this.toast('没有可翻译文本'); return; }
-      this.translateSources = texts;
-      try {
-        const provider = this.settings.ai.providers[this.activeProviderKey] || {};
-        // 所选模型的独立配置（上下文/温度/输出上限/thinking 等）
-        const model_config = (provider.model_configs && provider.model_configs[this.activeModel]) || {};
-        const body = {
-          texts,
-          source: this.settings.ai.source_lang || 'en',
-          target: this.settings.ai.target_lang || 'zh-CN',
-          engine: this.engine,
-          glossary_categories: this.selectedCategories,
-          concurrency: this.settings.ai.concurrency || 4,
-          mirrors: this.customMirrors || this.settings.ai.mirrors || null,
-          provider_config: this.engine === 'openai'
-            ? {base_url: provider.base_url, api_key: provider.api_key, model: this.activeModel}
-            : undefined,
-          model_config,
-          model_context: model_config.model_context || provider.model_context || this.settings.ai.model_context || null,
-        };
-        // 流式：SSE 解析
-        const resp = await fetch('/api/translate/stream', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-          const d = await resp.json().catch(() => ({}));
-          throw new Error(d.detail || resp.statusText);
-        }
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-        while (true) {
-          const {done, value} = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, {stream: true});
-          // 按 \n\n 切分 SSE 事件
-          let idx;
-          while ((idx = buf.indexOf('\n\n')) >= 0) {
-            const event = buf.slice(0, idx);
-            buf = buf.slice(idx + 2);
-            if (event.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(event.slice(6));
-                this.handleStreamEvent(data);
-              } catch (e) { /* 忽略解析失败的事件 */ }
-            }
-          }
-        }
-        this.translateProgress = 100;
-        // 最终结果汇总（按 id 排序，取自 done 事件记录）
-        const finalResults = [...this.translateResults].sort((a, b) => a.id - b.id);
-        this.translateResults = finalResults;
-        // 思考已全部 append 到 translateBlocks，清空实时增量
-        this.translateThinking = {};
-        this.translateBuffer = {};
-        this.editingRow = null;
-        this.pendingTerms = this.collectTerms(finalResults);
-        this.translatedTxt = finalResults.map(r => r.translation).join('\n');
-        this.toast(`翻译完成，${this.pendingTerms.length} 个不确定术语待审核`);
-        this.translated = true;
-        // 持久化：译文 + 完整 AI 输出（供继续任务时恢复映射/思考）
-        await this.persistAiOutput();
-        if (this.pendingTerms.length) this.step = 3;
-        else this.step = 4;
-      } catch (e) { this.toast('翻译失败: ' + e.message); }
-      finally { this.translating = false; }
-    },
-    // 保存 AI 输出（逐行译文/不确定术语/思考）到任务目录
-    async persistAiOutput() {
-      try {
-        await this.api(`/api/jobs/${this.currentJob}/ai_output`, {
-          method: 'POST',
-          body: JSON.stringify({results: this.translateResults, blocks: this.translateBlocks}),
-        });
-        await this.api(`/api/jobs/${this.currentJob}/translated`, {
-          method: 'POST',
-          body: JSON.stringify({text: this.translatedTxt}),
-        });
-      } catch (e) { this.toast('保存 AI 输出失败: ' + e.message); }
-    },
-    startEdit(id) {
-      this.editingRow = id;
-      this.$nextTick(() => {
-        const els = Array.isArray(this.$refs.rowEditor) ? this.$refs.rowEditor : [this.$refs.rowEditor];
-        els.forEach(e => { if (e) { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; } });
-      });
-      // 延迟聚焦，避免 textarea 刚挂载的 blur 立即触发保存
-      this.focusRowEditor();
-    },
-    autosizeRow(ev) {
-      ev.target.style.height = 'auto';
-      ev.target.style.height = ev.target.scrollHeight + 'px';
-    },
-    saveEdit(id, ev) {
-      this.updateTranslation(id, ev.target.value);
-      this.editingRow = null;
-    },
-    // textarea 挂载后立即 focus 会误触 blur，延迟到下一个宏任务再聚焦
-    focusRowEditor() {
-      this.$nextTick(() => {
-        setTimeout(() => {
-          const els = Array.isArray(this.$refs.rowEditor) ? this.$refs.rowEditor : [this.$refs.rowEditor];
-          els.forEach(e => { if (e) e.focus(); });
-        }, 0);
-      });
-    },
-    updateTranslation(id, value) {
-      const r = this.translateResults.find(x => x.id === id);
-      if (r) r.translation = value;
-      // 同步导出文本（与旧逻辑保持一致：译文按行拼接）
-      this.translatedTxt = this.translateResults.map(x => x.translation).join('\n');
-    },
-    toggleTermFilter(term) {
-      this.selectedTermFilter = this.selectedTermFilter === term ? null : term;
-    },
-    handleStreamEvent(data) {
-      if (data.type === 'meta') {
-        this.translateTotal = data.total;
-        this.translateChunks = data.chunks;
-        this.translateBlocksList = data.blocks || [];
-      } else if (data.type === 'thinking') {
-        const id = data.id;
-        this.translateThinking[id] = (this.translateThinking[id] || '') + (data.delta || '');
-      } else if (data.type === 'content') {
-        const id = data.id;
-        this.translateBuffer[id] = (this.translateBuffer[id] || '') + (data.delta || '');
-      } else if (data.type === 'progress') {
-        // 块完成 → 后端按行推送的进度
-        this.translateDone = data.done;
-        this.translateProgress = data.progress;
-      } else if (data.type === 'done') {
-        const id = data.id;
-        this.translateDone = (this.translateDone || 0) + 1;
-        // 块完成的第一个 done：把完整思考 append 到思考面板（块内每行都带同一 thinking）
-        if (data.block_id !== undefined && data.thinking && !this.translateBlockSaved.has(data.block_id)) {
-          this.translateBlockSaved.add(data.block_id);
-          this.translateBlocks.push({base: data.block_id, text: data.thinking});
-          delete this.translateThinking[data.block_id];
-        }
-        // 移除该块的缓冲（key 是块首行号；done 按行推送，块完成即清理）
-        delete this.translateBuffer[data.block_id !== undefined ? data.block_id : id];
-        // 记录结果（含不确定术语）
-        const existing = this.translateResults.find(r => r.id === id);
-        if (existing) {
-          existing.translation = data.translation;
-          existing.uncertain_terms = data.uncertain_terms || [];
-          if (data.thinking) existing.thinking = data.thinking;
-        } else {
-          this.translateResults.push({
-            id, translation: data.translation, uncertain_terms: data.uncertain_terms || [], thinking: data.thinking,
-          });
-        }
-        // 翻译失败的块：弹出真实错误原因（此前被静默丢弃）
-        if (data.error) this.toast('翻译失败: ' + data.error);
-      }
-    },
-    async loadSourceTexts() {
-      // 读取 source.txt 的全部行作为待译文本
-      const src = await this.api(`/api/jobs/${this.currentJob}/source`);
-      return src.texts;
-    },
-    collectTerms(results) {
-      const seen = new Set();
-      const terms = [];
-      for (const r of results) {
-        for (const t of r.uncertain_terms || []) {
-          if (t.term && !seen.has(t.term)) {
-            seen.add(t.term);
-            terms.push({...t, target: t.candidate || '', category: this.glossaryCategories[0] || '默认'});
-          }
-        }
-      }
-      return terms;
-    },
-    async acceptTerm(t) {
-      const category = t.category === '__new' ? (t.newCategory || '默认') : t.category;
-      try {
-        await this.api('/api/glossary/terms', {
-          method: 'POST',
-          body: JSON.stringify({category, source: t.term, target: t.target || t.term, note: t.reason || ''}),
-        });
-        this.pendingTerms = this.pendingTerms.filter(x => x !== t);
-        await this.loadGlossary();
-        this.toast('已入库');
-      } catch (e) { this.toast('入库失败: ' + e.message); }
-    },
-    ignoreTerm(i) { this.pendingTerms.splice(i, 1); },
-    async acceptAll() {
-      for (const t of [...this.pendingTerms]) await this.acceptTerm(t);
-    },
-    skipAll() { this.pendingTerms = []; },
-    async doApply() {
-      this.applying = true;
-      try {
-        // 保存译文到 translated.txt
-        await this.api(`/api/jobs/${this.currentJob}/translated`, {
-          method: 'POST',
-          body: JSON.stringify({text: this.translatedTxt}),
-        });
-        this.applyInfo = await this.api(`/api/jobs/${this.currentJob}/apply`, {
-          method: 'POST', body: JSON.stringify({sep: '\\n'}),
-        });
-        await this.refreshJobs();  // 刷新任务列表，让任务区出现下载按钮
-        this.toast('导出完成，可下载文件');
-      } catch (e) { this.toast('导出失败: ' + e.message); }
-      finally { this.applying = false; }
-    },
-  },
-  mounted() {
-    this.refreshJobs();
-    this.loadSettings();
-    this.loadMirrors();
-  },
-}).mount('#app');
-</script>
+<script src="app.js"></script>
 </body>
 </html>
