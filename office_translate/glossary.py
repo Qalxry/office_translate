@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import json
 import os
+import copy
 from datetime import datetime
+from collections.abc import Callable, Mapping
 from typing import Any, Optional
+
+from .storage import LockRegistry, atomic_write_json
 
 
 class GlossaryError(Exception):
@@ -24,29 +28,110 @@ class GlossaryError(Exception):
 
 
 DEFAULT_GLOSSARY_FILE = "data/glossary.json"
+_GLOSSARY_LOCKS = LockRegistry()
 
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _validate_glossary(data: Any, *, path: str = "术语库") -> dict[str, Any]:
+    if not isinstance(data, Mapping) or not isinstance(data.get("categories"), Mapping):
+        raise GlossaryError(f"{path} 格式非法：顶层需有 categories 映射。")
+    categories = data["categories"]
+    for category, entries in categories.items():
+        if not isinstance(category, str) or not category.strip():
+            raise GlossaryError(f"{path} 类别名必须是非空字符串。")
+        if not isinstance(entries, list):
+            raise GlossaryError(f"{path} 类别 {category!r} 必须是术语数组。")
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, Mapping):
+                raise GlossaryError(f"{path} 类别 {category!r} 的第 {index + 1} 项必须是对象。")
+            source = entry.get("source")
+            target = entry.get("target")
+            if not isinstance(source, str) or not source.strip():
+                raise GlossaryError(f"{path} 类别 {category!r} 的第 {index + 1} 项 source 非法。")
+            if not isinstance(target, str) or not target.strip():
+                raise GlossaryError(f"{path} 类别 {category!r} 的第 {index + 1} 项 target 非法。")
+            for optional in ("note", "created"):
+                if optional in entry and not isinstance(entry[optional], str):
+                    raise GlossaryError(
+                        f"{path} 类别 {category!r} 的第 {index + 1} 项 {optional} 必须是字符串。"
+                    )
+    try:
+        json.dumps(data, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise GlossaryError(f"{path} 含有不可保存的 JSON 值。") from exc
+    return {"categories": copy.deepcopy(dict(categories))}
+
+
+class GlossaryStore:
+    """Lock and atomically persist one glossary JSON file.
+
+    ``update`` is the important route-facing API: it loads, invokes the
+    mutator, validates, and replaces the file while holding one re-entrant
+    process-local lock.  Separate ``load``/``save`` methods remain available
+    for read-only and current-version callers, but a route doing a
+    read-modify-write should use ``update``.
+    """
+
+    def __init__(self, path: str | os.PathLike[str] = DEFAULT_GLOSSARY_FILE):
+        self.path = os.path.abspath(os.fspath(path))
+
+    def _load_unlocked(self) -> dict[str, Any]:
+        if not os.path.isfile(self.path):
+            return {"categories": {}}
+        try:
+            with open(self.path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise GlossaryError(f"术语库 {self.path} 不是合法 JSON。") from exc
+        except OSError as exc:
+            raise GlossaryError(f"读取术语库失败: {self.path}: {exc}") from exc
+        return _validate_glossary(data, path=f"术语库 {self.path}")
+
+    def load(self) -> dict[str, Any]:
+        with _GLOSSARY_LOCKS.hold(self.path):
+            return self._load_unlocked()
+
+    def save(self, data: Mapping[str, Any]) -> None:
+        payload = _validate_glossary(data)
+        with _GLOSSARY_LOCKS.hold(self.path):
+            try:
+                atomic_write_json(self.path, payload)
+            except (OSError, TypeError, ValueError) as exc:
+                raise GlossaryError(f"保存术语库失败: {self.path}: {exc}") from exc
+
+    def update(self, mutator: Callable[[dict[str, Any]], Any]) -> Any:
+        """Run a glossary read-modify-write transaction under one lock."""
+        if not callable(mutator):
+            raise GlossaryError("update 需要可调用的修改函数。")
+        with _GLOSSARY_LOCKS.hold(self.path):
+            data = self._load_unlocked()
+            result = mutator(data)
+            payload = _validate_glossary(data)
+            try:
+                atomic_write_json(self.path, payload)
+            except (OSError, TypeError, ValueError) as exc:
+                raise GlossaryError(f"保存术语库失败: {self.path}: {exc}") from exc
+            return result
+
+
+def update_glossary(
+    path: str | os.PathLike[str], mutator: Callable[[dict[str, Any]], Any]
+) -> Any:
+    """Atomically apply one glossary read-modify-write transaction."""
+    return GlossaryStore(path).update(mutator)
+
+
 def load_glossary(path: str = DEFAULT_GLOSSARY_FILE) -> dict[str, Any]:
     """读取术语库；文件不存在时返回空结构。"""
-    if not os.path.isfile(path):
-        return {"categories": {}}
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict) or not isinstance(data.get("categories"), dict):
-        raise GlossaryError(f"术语库 {path} 格式非法：顶层需有 categories 映射。")
-    return data
+    return GlossaryStore(path).load()
 
 
 def save_glossary(data: dict[str, Any], path: str = DEFAULT_GLOSSARY_FILE) -> None:
     """写回术语库（保留已存在条目）。"""
-    payload = {"categories": data.get("categories", {})}
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    GlossaryStore(path).save(data)
 
 
 def list_categories(data: dict[str, Any]) -> list[str]:
@@ -61,13 +146,23 @@ def add_term(
     note: str = "",
 ) -> dict[str, Any]:
     """向指定类别新增术语；source 已存在则更新 target/note。返回该词条。"""
-    if not source or not target:
+    if not isinstance(category, str):
+        raise GlossaryError("category 必须是字符串")
+    if not isinstance(source, str) or not source.strip() or not isinstance(target, str) or not target.strip():
         raise GlossaryError("source 与 target 不能为空")
+    if not isinstance(note, str):
+        raise GlossaryError("note 必须是字符串")
     categories = data.setdefault("categories", {})
+    if not isinstance(categories, dict):
+        raise GlossaryError("术语库格式非法：categories 必须是映射。")
     category = category.strip() or "默认"
     entries = categories.setdefault(category, [])
+    if not isinstance(entries, list):
+        raise GlossaryError(f"术语类别 {category!r} 格式非法：必须是数组。")
 
     for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("source"), str):
+            raise GlossaryError(f"术语类别 {category!r} 含有格式非法的条目。")
         if entry["source"] == source:
             entry["target"] = target
             if note:
@@ -85,10 +180,23 @@ def add_term(
 
 def remove_term(data: dict[str, Any], category: str, source: str) -> bool:
     """从指定类别删除术语。返回是否删除成功。"""
-    entries = data.get("categories", {}).get(category, [])
+    if not isinstance(category, str) or not isinstance(source, str):
+        raise GlossaryError("category 与 source 必须是字符串")
+    categories = data.get("categories", {})
+    if not isinstance(categories, dict):
+        raise GlossaryError("术语库格式非法：categories 必须是映射。")
+    entries = categories.get(category, [])
+    if not isinstance(entries, list):
+        raise GlossaryError(f"术语类别 {category!r} 格式非法：必须是数组。")
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("source"), str):
+            raise GlossaryError(f"术语类别 {category!r} 含有格式非法的条目。")
     before = len(entries)
-    data["categories"][category] = [e for e in entries if e["source"] != source]
-    return len(data["categories"][category]) != before
+    categories[category] = [
+        e for e in entries
+        if e.get("source") != source
+    ]
+    return len(categories[category]) != before
 
 
 def match_terms(

@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -27,6 +29,63 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 class ConfigError(Exception):
     """配置或任务状态不合法。"""
+
+
+_JOB_NAME_MAX_LENGTH = 80
+_SAFE_JOB_NAME_CHARS = frozenset(" _-.")
+
+
+def _validate_relative_path(
+    value: Any,
+    label: str,
+    *,
+    allow_nested: bool,
+) -> str:
+    """Validate a path stored inside a job directory.
+
+    These are application-internal names, not a general filesystem security
+    boundary.  They must be relative, contain no traversal or platform path
+    separator, and resolve under the owning job directory.  Absolute config
+    directories remain allowed where the public config contract calls for it.
+    """
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"{label} 必须是非空相对路径")
+    if "\x00" in value or os.path.isabs(value) or value.startswith(("/", "\\")):
+        raise ConfigError(f"{label} 必须是相对路径: {value!r}")
+    if ":" in value:
+        raise ConfigError(f"{label} 不能包含驱动器或 URI 分隔符: {value!r}")
+    separators = re.split(r"[\\/]", value)
+    if not allow_nested and len(separators) != 1:
+        raise ConfigError(f"{label} 不能包含路径分隔符: {value!r}")
+    if any(part in ("", ".", "..") for part in separators):
+        raise ConfigError(f"{label} 含有非法路径片段: {value!r}")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ConfigError(f"{label} 不能包含控制字符: {value!r}")
+    return value
+
+
+def _validate_job_name(job: Any) -> str:
+    if not isinstance(job, str) or not job:
+        raise ConfigError(f"非法任务名: {job!r}")
+    if len(job) > _JOB_NAME_MAX_LENGTH:
+        raise ConfigError(f"非法任务名: {job!r}（最多 {_JOB_NAME_MAX_LENGTH} 个字符）")
+    if job != job.strip() or job.endswith((".", " ")):
+        raise ConfigError(f"非法任务名: {job!r}（不能以空格或句点结尾）")
+    if job in (".", ".."):
+        raise ConfigError(f"非法任务名: {job!r}")
+    if any(
+        character not in _SAFE_JOB_NAME_CHARS and not character.isalnum()
+        for character in job
+    ):
+        raise ConfigError(
+            f"非法任务名: {job!r}（只允许字母、数字、中文、空格、下划线、短横线和句点）"
+        )
+    return job
+
+
+def _validated_output_dir(config: dict[str, Any]) -> str:
+    value = config.get("output_dir")
+    return _validate_relative_path(value, "output_dir", allow_nested=True)
 
 
 def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
@@ -45,25 +104,24 @@ def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
         if config_path and os.path.isfile(config_path)
         else os.getcwd()
     )
+    if not isinstance(merged.get("work_dir"), str) or not merged["work_dir"]:
+        raise ConfigError("work_dir 必须是非空路径")
     work_dir = merged["work_dir"]
     if not os.path.isabs(work_dir):
         work_dir = os.path.join(base, work_dir)
 
+    output_dir = _validated_output_dir(merged)
+
     return {
         "config_path": config_path,
         "work_dir": work_dir,
-        "output_dir": merged["output_dir"],
+        "output_dir": output_dir,
         "sep": decode_escapes(str(merged["sep"])),
     }
 
 
-def _validate_job_name(job: str) -> None:
-    if job in ("", ".", "..") or os.path.sep in job or ("/" in job and os.path.sep != "/"):
-        raise ConfigError(f"非法任务名: {job!r}（不能包含路径分隔符）")
-
-
 def job_dir(config: dict[str, Any], job: str) -> str:
-    return os.path.join(config["work_dir"], job)
+    return os.path.join(config["work_dir"], _validate_job_name(job))
 
 
 def auto_job_name(config: dict[str, Any]) -> str:
@@ -100,6 +158,7 @@ def init_job(
     try:
         # 不可断行空格（U+00A0）在文件名中极易踩命令行坑，统一替换为普通空格
         filename = os.path.basename(input_path).replace(" ", " ")
+        _validate_relative_path(filename, "任务输入文件名", allow_nested=False)
         dest = os.path.join(jdir, filename)
         shutil.copy2(input_path, dest)
 
@@ -136,12 +195,24 @@ def load_job(config: dict[str, Any], job: str) -> dict[str, Any]:
     if "input" not in data:
         raise ConfigError(f"任务配置 {job_yaml} 缺少 input 字段。")
 
-    src = os.path.join(jdir, str(data["input"]))
+    input_name = _validate_relative_path(
+        data["input"],
+        "任务 input",
+        allow_nested=False,
+    )
+    job_root = Path(jdir).resolve()
+    src_path = (job_root / input_name).resolve()
+    if src_path.parent != job_root:
+        raise ConfigError(f"任务 input 越出任务目录: {input_name!r}")
+    src = os.fspath(src_path)
     if not os.path.isfile(src):
         raise ConfigError(f"任务的输入文件缺失: {src}（与 job.yaml 的 input 字段对应）")
 
     sep = decode_escapes(str(data["sep"])) if "sep" in data else config["sep"]
-    out_dir = os.path.join(jdir, config["output_dir"])
+    output_dir_name = _validated_output_dir(config)
+    out_dir = (job_root / output_dir_name).resolve()
+    if job_root not in out_dir.parents and out_dir != job_root:
+        raise ConfigError(f"output_dir 越出任务目录: {output_dir_name!r}")
     ext = os.path.splitext(src)[1]
 
     return {
@@ -154,6 +225,7 @@ def load_job(config: dict[str, Any], job: str) -> dict[str, Any]:
         "source_txt": os.path.join(jdir, "source.txt"),
         "map_json": os.path.join(jdir, "map.json"),
         "translated_txt": os.path.join(jdir, "translated.txt"),
+        "manifest_json": os.path.join(jdir, "manifest.json"),
         "output_dir": out_dir,
         "output_translated": os.path.join(out_dir, f"{job}_translated{ext}"),
         "output_bilingual": os.path.join(out_dir, f"{job}_bilingual{ext}"),

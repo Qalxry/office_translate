@@ -1,15 +1,21 @@
 """术语库（glossary）测试：加载/新增/匹配精简/prompt 格式化。"""
 
+from __future__ import annotations
+
+import threading
+
 import pytest
 
 from office_translate.glossary import (
     GlossaryError,
+    GlossaryStore,
     add_term,
     format_glossary_prompt,
     load_glossary,
     match_terms,
     remove_term,
     save_glossary,
+    update_glossary,
 )
 
 
@@ -100,3 +106,78 @@ def test_format_prompt(glossary_data):
     assert "PPB = 十亿分之几" in s
     assert "已知术语表" in s
     assert format_glossary_prompt([]) == ""
+
+
+def test_glossary_update_serializes_read_modify_write(tmp_path):
+    path = tmp_path / "glossary.json"
+    workers = 8
+    barrier = threading.Barrier(workers)
+    errors = []
+
+    def worker(index):
+        try:
+            barrier.wait(timeout=2)
+            update_glossary(
+                path,
+                lambda data: add_term(data, "并发", f"source-{index}", f"target-{index}"),
+            )
+        except BaseException as exc:  # report failures after all threads join
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+    assert not errors
+    assert all(not thread.is_alive() for thread in threads)
+    entries = load_glossary(path)["categories"]["并发"]
+    assert {entry["source"] for entry in entries} == {
+        f"source-{index}" for index in range(workers)
+    }
+
+
+def test_glossary_update_validation_failure_keeps_previous_file(tmp_path):
+    path = tmp_path / "glossary.json"
+    save_glossary({"categories": {"原有": [{"source": "A", "target": "a"}]}}, path)
+
+    with pytest.raises(GlossaryError, match="target 非法"):
+        update_glossary(
+            path,
+            lambda data: data["categories"]["原有"].append(
+                {"source": "B", "target": ""}
+            ),
+        )
+
+    assert load_glossary(path) == {
+        "categories": {"原有": [{"source": "A", "target": "a"}]}
+    }
+    assert list(tmp_path.glob(".glossary.json.*")) == []
+
+
+def test_glossary_invalid_json_is_explicit(tmp_path):
+    path = tmp_path / "glossary.json"
+    path.write_text("{broken", encoding="utf-8")
+
+    with pytest.raises(GlossaryError, match="合法 JSON"):
+        GlossaryStore(path).load()
+
+
+def test_glossary_atomic_save_failure_keeps_previous_file_and_cleans_temp(tmp_path, monkeypatch):
+    path = tmp_path / "glossary.json"
+    save_glossary({"categories": {"原有": [{"source": "A", "target": "a"}]}}, path)
+
+    import office_translate.storage as storage
+
+    def fail_replace(source, target):
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(storage.os, "replace", fail_replace)
+    with pytest.raises(GlossaryError, match="保存术语库失败"):
+        save_glossary({"categories": {"新": [{"source": "B", "target": "b"}]}}, path)
+
+    assert load_glossary(path) == {
+        "categories": {"原有": [{"source": "A", "target": "a"}]}
+    }
+    assert list(tmp_path.glob(".glossary.json.*")) == []

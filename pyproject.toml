@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers -m 'not external'"
+xfail_strict = true
+markers = [
+  "p0_regression: confirmed P0 defect reproducer; remove xfail when the proposal is fixed",
+  "external: requires a real network service or provider and is excluded by default",
+  "e2e: requires an installed browser runtime",
+]
