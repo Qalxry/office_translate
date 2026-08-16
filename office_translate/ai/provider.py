@@ -9,15 +9,204 @@
 from __future__ import annotations
 
 import abc
+import copy
+import math
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from types import MappingProxyType
+from typing import Any, Mapping, Optional
 
 import requests
+
+from .contracts import (
+    OutputContractError,
+    ProviderCompletion,
+    TRANSLATION_SCHEMA,
+    TranslationBlockResult,
+    TranslationRequestItem,
+    parse_result_by_format,
+)
 
 
 class ProviderError(Exception):
     """翻译请求失败（含所有镜像站失败）。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        diagnostic: Any = None,
+        retryable: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.diagnostic = diagnostic
+        self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class ProviderConfig:
+    """Validated effective model configuration shared by every request path."""
+
+    base_url: str
+    model: str
+    temperature: float | None
+    model_context: int | None
+    output_format: str
+    response_format: str
+    request_params: Mapping[str, Any]
+    extra_body: Mapping[str, Any]
+    max_output_tokens: int | None
+
+    @classmethod
+    def from_model_config(
+        cls,
+        *,
+        base_url: str,
+        model: str,
+        temperature: float | None,
+        model_config: Mapping[str, Any] | None,
+    ) -> "ProviderConfig":
+        if not isinstance(base_url, str) or not base_url.strip():
+            raise ProviderError("缺少 API base_url", code="invalid_config", retryable=False)
+        if not isinstance(model, str) or not model.strip():
+            raise ProviderError("缺少模型名称", code="invalid_config", retryable=False)
+        if temperature is not None and (
+            not isinstance(temperature, (int, float)) or isinstance(temperature, bool)
+            or not math.isfinite(float(temperature))
+        ):
+            raise ProviderError("temperature 必须是有限数字", code="invalid_config", retryable=False)
+
+        sdk_params = {
+            "temperature", "max_tokens", "max_completion_tokens", "top_p", "top_logprobs",
+            "reasoning_effort", "frequency_penalty", "presence_penalty", "seed", "stop",
+            "n", "user", "logit_bias", "logprobs", "prediction", "metadata", "modalities",
+            "moderation", "safety_identifier", "service_tier", "store", "stream_options",
+            "verbosity", "audio", "web_search_options",
+        }
+        # These are known provider-specific OpenAI-compatible body fields.
+        # Arbitrary vendor fields must be explicitly nested under ``extra``;
+        # silently forwarding every typo as a fake supported parameter is unsafe.
+        extra_body_params = {"thinking", "top_k"}
+        reserved = {
+            "model_context", "response_format", "output_format", "extra", "_effort_options"
+        }
+        if model_config is not None and not isinstance(model_config, Mapping):
+            raise ProviderError("model_config 必须是对象", code="invalid_config", retryable=False)
+        mc = copy.deepcopy(dict(model_config or {}))
+        unknown = sorted(
+            key for key in mc
+            if key not in sdk_params and key not in extra_body_params and key not in reserved
+            and not key.startswith("_")
+        )
+        if unknown:
+            raise ProviderError(
+                f"不支持的模型参数: {', '.join(unknown)}；请放入 extra 明确传递",
+                code="unsupported_model_parameter",
+                retryable=False,
+            )
+        model_context = mc.get("model_context")
+        if model_context is not None and (
+            not isinstance(model_context, int)
+            or isinstance(model_context, bool)
+            or model_context <= 0
+        ):
+            raise ProviderError("model_context 必须是正整数", code="invalid_config", retryable=False)
+        for name in ("max_tokens", "max_completion_tokens", "top_k", "n", "seed"):
+            value = mc.get(name)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            ):
+                raise ProviderError(f"{name} 必须是正整数", code="invalid_config", retryable=False)
+        if mc.get("max_tokens") is not None and mc.get("max_completion_tokens") is not None:
+            raise ProviderError(
+                "max_tokens 与 max_completion_tokens 不能同时设置",
+                code="invalid_config",
+                retryable=False,
+            )
+        for name in ("temperature", "top_p", "frequency_penalty", "presence_penalty"):
+            value = mc.get(name)
+            if value is not None and (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+            ):
+                raise ProviderError(f"{name} 必须是有限数字", code="invalid_config", retryable=False)
+        if mc.get("top_p") is not None and not 0 <= float(mc["top_p"]) <= 1:
+            raise ProviderError("top_p 必须在 0 到 1 之间", code="invalid_config", retryable=False)
+        output_format = mc.get("output_format") or "xml"
+        if output_format not in {"text", "json", "xml"}:
+            raise ProviderError("output_format 必须是 text/json/xml", code="invalid_config", retryable=False)
+        response_format = mc.get("response_format") or "none"
+        if response_format not in {"auto", "none", "json_object", "json_schema"}:
+            raise ProviderError(
+                "response_format 必须是 auto/none/json_object/json_schema",
+                code="invalid_config",
+                retryable=False,
+            )
+        if output_format != "json" and response_format in {"json_object", "json_schema"}:
+            raise ProviderError(
+                "json_object/json_schema 仅支持 JSON 输出协议",
+                code="invalid_config",
+                retryable=False,
+            )
+
+        request_params: dict[str, Any] = {}
+        extra_body: dict[str, Any] = {}
+        for key, value in mc.items():
+            if value is None or key.startswith("_") or key in reserved:
+                continue
+            if key in sdk_params:
+                request_params[key] = value
+            else:
+                extra_body[key] = value
+        extra = mc.get("extra")
+        if extra is not None:
+            if not isinstance(extra, Mapping) or any(not isinstance(key, str) for key in extra):
+                raise ProviderError("extra 必须是字符串键对象", code="invalid_config", retryable=False)
+            extra_body.update({key: value for key, value in extra.items() if value is not None})
+        if "temperature" not in request_params and temperature is not None:
+            request_params["temperature"] = temperature
+        return cls(
+            base_url=base_url.rstrip("/"),
+            model=model,
+            temperature=float(temperature) if temperature is not None else None,
+            model_context=model_context,
+            output_format=output_format,
+            response_format=response_format,
+            request_params=MappingProxyType(dict(request_params)),
+            extra_body=MappingProxyType(dict(extra_body)),
+            max_output_tokens=request_params.get("max_completion_tokens")
+            or request_params.get("max_tokens"),
+        )
+
+
+def _cancel_requested(cancel_event: Any) -> bool:
+    if cancel_event is None:
+        return False
+    checker = getattr(cancel_event, "is_set", None)
+    if callable(checker):
+        return bool(checker())
+    checker = getattr(cancel_event, "is_cancelled", None)
+    if callable(checker):
+        return bool(checker())
+    if callable(cancel_event):
+        return bool(cancel_event())
+    raise TypeError("cancel_event 必须提供 is_set()/is_cancelled() 或可调用接口")
+
+
+def _cancelled_outcome(item: TranslationRequestItem) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "translation": item.text,
+        "uncertain_terms": [],
+        "status": "cancelled",
+        "error": "翻译已取消",
+        "error_code": "cancelled",
+        "diagnostic": None,
+    }
 
 
 @dataclass
@@ -44,44 +233,205 @@ class Provider(abc.ABC):
         target: str,
         concurrency: int = 1,
     ) -> list[str]:
-        """批量翻译，返回与输入等长的译文列表。
+        """批量翻译，返回确定性顺序的译文；失败或取消会明确抛错。"""
+        outcomes = self.translate_batch_outcomes(
+            texts, source, target, concurrency=concurrency
+        )
+        for outcome in outcomes:
+            if outcome["status"] != "succeeded":
+                raise ProviderError(
+                    outcome["error"],
+                    code=outcome["error_code"],
+                    diagnostic=outcome.get("diagnostic"),
+                    retryable=outcome["status"] != "cancelled",
+                )
+        return [outcome["translation"] for outcome in outcomes]
 
-        Args:
-            concurrency: 并发线程数（>1 时并发翻译，失败的单条降级为原文）。
-        """
-        if concurrency <= 1:
-            return [self.translate(t, source, target) for t in texts]
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        results: list[Optional[str]] = [None] * len(texts)
-        with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            futures = {pool.submit(self.translate, texts[i], source, target): i for i in range(len(texts))}
-            for fut in as_completed(futures):
-                i = futures[fut]
-                try:
-                    results[i] = fut.result()
-                except ProviderError:
-                    results[i] = texts[i]  # 失败降级为原文
-        return [r or "" for r in results]
-
-    def translate_stream(
+    def translate_batch_outcomes(
         self,
         texts: list[str],
         source: str,
         target: str,
-        glossary_entries: Optional[list[dict[str, Any]]] = None,
-    ) -> "typing.Iterator[dict]":
-        """流式批量翻译：逐条 yield {"id", "translation", "uncertain_terms", "thinking"}。
+        *,
+        concurrency: int = 1,
+        cancel_event: Any = None,
+    ) -> list[dict[str, Any]]:
+        """Translate with bounded workers and explicit per-item outcomes.
 
-        默认实现：串行逐条调用 translate（无 thinking）。
-        OpenAI 兼容 Provider 覆盖此方法以支持思考过程流式输出。
+        Futures are always folded back into input order.  Once cancellation is
+        observed, completed-but-not-yet-published successes are intentionally
+        converted to ``cancelled`` and pending futures are not published.
         """
-        del glossary_entries
-        for i, text in enumerate(texts):
+        if not isinstance(texts, list) or any(not isinstance(text, str) for text in texts):
+            raise ProviderError("texts 必须是字符串数组", code="invalid_request", retryable=False)
+        max_workers = max(1, int(concurrency))
+        items = [TranslationRequestItem(id=index, text=text) for index, text in enumerate(texts)]
+        results: list[dict[str, Any] | None] = [None] * len(items)
+
+        def run(item: TranslationRequestItem) -> dict[str, Any]:
             try:
-                yield {"id": i, "translation": self.translate(text, source, target), "uncertain_terms": [], "thinking": None}
-            except ProviderError:
-                yield {"id": i, "translation": text, "uncertain_terms": [{"term": text[:80], "reason": "翻译失败，保留原文", "candidate": ""}], "thinking": None}
+                if _cancel_requested(cancel_event):
+                    return _cancelled_outcome(item)
+                translation = self.translate(item.text, source, target)
+                if not isinstance(translation, str) or (item.text and not translation.strip()):
+                    raise ProviderError("翻译服务返回了空响应", code="empty_response")
+                return {
+                    "id": item.id,
+                    "translation": translation,
+                    "uncertain_terms": [],
+                    "status": "succeeded",
+                    "error": None,
+                    "error_code": None,
+                    "diagnostic": None,
+                }
+            except ProviderError as exc:
+                return {
+                    **(
+                        _cancelled_outcome(item)
+                        if exc.code == "cancelled"
+                        else {
+                        "id": item.id,
+                        "translation": item.text,
+                        "uncertain_terms": [],
+                        "status": "failed",
+                        "error": str(exc),
+                        "error_code": exc.code,
+                        "diagnostic": exc.diagnostic,
+                        }
+                    )
+                }
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "id": item.id,
+                    "translation": item.text,
+                    "uncertain_terms": [],
+                    "status": "failed",
+                    "error": f"翻译服务异常（{type(exc).__name__}）",
+                    "error_code": "provider_error",
+                    "diagnostic": {"exception_type": type(exc).__name__},
+                }
+
+        if not items:
+            return []
+        if max_workers == 1:
+            cancelled = False
+            for index, item in enumerate(items):
+                if cancelled or _cancel_requested(cancel_event):
+                    cancelled = True
+                    results[index] = _cancelled_outcome(item)
+                    continue
+                result = run(item)
+                if _cancel_requested(cancel_event) and result["status"] == "succeeded":
+                    cancelled = True
+                    result = _cancelled_outcome(item)
+                results[index] = result
+            return [result for result in results if result is not None]
+
+        pool = ThreadPoolExecutor(max_workers=max_workers)
+        futures = {
+            pool.submit(run, item): index for index, item in enumerate(items)
+        }
+        cancelled = False
+        try:
+            for future in as_completed(futures):
+                index = futures[future]
+                if cancelled or _cancel_requested(cancel_event):
+                    cancelled = True
+                    future.cancel()
+                    results[index] = _cancelled_outcome(items[index])
+                    for pending, pending_index in futures.items():
+                        if pending is not future:
+                            pending.cancel()
+                    break
+                result = future.result()
+                if _cancel_requested(cancel_event) and result["status"] == "succeeded":
+                    cancelled = True
+                    result = _cancelled_outcome(items[index])
+                results[index] = result
+                if cancelled:
+                    break
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
+        for index, result in enumerate(results):
+            if result is None:
+                results[index] = _cancelled_outcome(items[index]) if cancelled or _cancel_requested(cancel_event) else {
+                    "id": items[index].id,
+                    "translation": items[index].text,
+                    "uncertain_terms": [],
+                    "status": "failed",
+                    "error": "翻译任务未返回结果",
+                    "error_code": "batch_incomplete",
+                    "diagnostic": None,
+                }
+        return [result for result in results if result is not None]
+
+    def translate_stream(
+        self,
+        items: list[TranslationRequestItem],
+        source: str,
+        target: str,
+        glossary_entries: Optional[list[dict[str, Any]]] = None,
+        *,
+        cancel_event: Any = None,
+    ):
+        """Yield validated provider block outcomes for ID-bearing inputs."""
+        del glossary_entries
+        for item_index, item in enumerate(items):
+            if _cancel_requested(cancel_event):
+                yield {
+                    "type": "block_cancelled",
+                    "ids": [remaining.id for remaining in items[item_index:]],
+                    "error_code": "cancelled",
+                    "error": "翻译已取消",
+                    "diagnostic": None,
+                    "thinking": "",
+                }
+                return
+            try:
+                translation = self.translate(item.text, source, target)
+                if not isinstance(translation, str) or (
+                    item.text and not translation.strip()
+                ):
+                    raise ProviderError(
+                        "翻译服务返回了空响应", code="empty_response"
+                    )
+                yield {
+                    "type": "block_succeeded",
+                    "items": [
+                        {
+                            "id": item.id,
+                            "translation": translation,
+                            "uncertain_terms": [],
+                        }
+                    ],
+                    "thinking": "",
+                    "diagnostic": None,
+                }
+            except ProviderError as exc:
+                event_type = "block_cancelled" if exc.code == "cancelled" else "block_failed"
+                yield {
+                    "type": event_type,
+                    "ids": [
+                        remaining.id for remaining in items[item_index:]
+                    ] if event_type == "block_cancelled" else [item.id],
+                    "error_code": exc.code,
+                    "error": str(exc),
+                    "diagnostic": exc.diagnostic,
+                    "retryable": exc.retryable,
+                    "thinking": "",
+                }
+                if event_type == "block_cancelled":
+                    return
+            except Exception as exc:  # noqa: BLE001
+                yield {
+                    "type": "block_failed",
+                    "ids": [item.id],
+                    "error_code": "provider_error",
+                    "error": f"翻译服务异常（{type(exc).__name__}）",
+                    "diagnostic": {"exception_type": type(exc).__name__},
+                    "retryable": True,
+                    "thinking": "",
+                }
 
 
 class OpenAICompatProvider(Provider):
@@ -106,92 +456,37 @@ class OpenAICompatProvider(Provider):
     ):
         from openai import OpenAI
 
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
-        self._model = model
-        self._temperature = temperature
-        # 模型级请求参数（来自 GUI 的 model_configs[model]）：
-        # temperature / max_tokens / top_p / thinking / reasoning_effort / top_k / extra…
-        # 显式设置的才会传给 API；未设置（None）不传，交给 API 默认。
-        # 参数分两类：SDK 标准参数直接传 kwargs；
-        # 非标准参数（thinking / top_k / 自定义）走 extra_body，避免 SDK 强类型报错。
-        _SDK_STD = {
-            "temperature", "max_tokens", "max_completion_tokens", "top_p", "top_logprobs",
-            "reasoning_effort", "frequency_penalty", "presence_penalty", "seed", "stop",
-            "n", "user", "logit_bias", "logprobs", "prediction", "metadata", "modalities",
-            "moderation", "safety_identifier", "service_tier", "store", "stream_options",
-            "verbosity", "audio", "web_search_options",
-        }
-        mc = model_config or {}
-        self._request_params: dict = {}   # SDK 标准参数 → create(**kwargs)
-        self._extra_body: dict = {}       # 非标准参数 → create(extra_body=...)
-        for k, v in mc.items():
-            # 下划线前缀是内部字段（如 _effort_options，仅 UI 用），不传给 API
-            if v is None or k.startswith("_") or k in ("model_context", "response_format", "extra"):
-                continue
-            if k in _SDK_STD:
-                self._request_params[k] = v
-            else:
-                self._extra_body[k] = v
-        extra = mc.get("extra")
-        if isinstance(extra, dict):
-            self._extra_body.update({k: v for k, v in extra.items() if v is not None})
-        # response_format 显式覆盖（"json_object"/"json_schema"/"none"/dict）：
-        # 设置后跳过自动探测降级链，直接使用该模式。
-        self._format_override = mc.get("response_format")
-        # 输出格式模式：
-        # - 思考型模型（deepseek-reasoner / o1 / o3 等）JSON 输出不稳定，直接用 XML 标签；
-        # - 其余模型从 strict json_schema 开始，400 时逐级降级
-        #   （json_schema → json_object → xml），记住结果避免每次重试。
-        m = model.lower()
-        if "reasoner" in m or "o1" in m or "o3" in m or "thinking" in m:
-            self._format_mode = "xml"
-        else:
-            self._format_mode = "json_schema"
+        self._config = ProviderConfig.from_model_config(
+            base_url=base_url,
+            model=model,
+            temperature=temperature,
+            model_config=model_config,
+        )
+        self.config = self._config
+        self._client = OpenAI(base_url=self._config.base_url, api_key=api_key)
+        self._model = self._config.model
+        self._temperature = self._config.temperature
+        self.model_context = self._config.model_context
+        self.output_format = self._config.output_format
+        self.response_format = self._config.response_format
+        # Keep these attributes for integrations that inspect the provider,
+        # but derive both sync and stream requests from the same snapshot.
+        self._request_params = dict(self._config.request_params)
+        self._extra_body = dict(self._config.extra_body)
 
     def translate(self, text: str, source: str, target: str) -> str:
-        content = self._chat_with_glossary(text, source, target, glossary="")
-        # XML 兜底模式返回的是带标签文本，需提取译文（行列表 → 字符串）
-        if self._format_mode == "xml":
-            from .translator import _parse_result
-
-            return "\n".join(_parse_result(content)["translations"])
-        return content.strip()
-
-    def _system_prompt(self, source: str, target: str, glossary: str) -> str:
-        """按当前输出模式选择 system 模板（JSON 或 XML 兜底）。"""
-        from .translator import _SYSTEM_TMPL, _SYSTEM_TMPL_XML
-
-        tmpl = _SYSTEM_TMPL_XML if self._format_mode == "xml" else _SYSTEM_TMPL
-        return tmpl.format(source=source, target=target, glossary=glossary)
+        block = self.translate_items(
+            [TranslationRequestItem(id=0, text=text)],
+            source,
+            target,
+        )
+        return block.items[0].translation
 
     def _response_format(self) -> Optional[dict]:
-        """构造 response_format：json_schema 优先，逐级降级 json_object / xml（不传）。
-
-        若模型配置显式指定 response_format 覆盖（如 {"type": "json_object"} 或 "none"），
-        直接使用覆盖值，跳过自动探测。
-        """
-        from .translator import TRANSLATION_SCHEMA
-
-        ov = self._format_override
-        if ov:
-            if ov == "none":
-                return None
-            if ov == "json_object":
-                return {"type": "json_object"}
-            if ov == "json_schema":
-                return {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "translation_result",
-                        "schema": TRANSLATION_SCHEMA,
-                        "strict": True,
-                    },
-                }
-            if isinstance(ov, dict):
-                return ov
-        if self._format_mode == "json_object":
-            return {"type": "json_object"}
-        if self._format_mode == "json_schema":
+        """Transport hint; only meaningful for the JSON protocol."""
+        if self.output_format != "json" or self.response_format == "none":
+            return None
+        if self.response_format == "json_schema":
             return {
                 "type": "json_schema",
                 "json_schema": {
@@ -200,118 +495,313 @@ class OpenAICompatProvider(Provider):
                     "strict": True,
                 },
             }
-        return None
+        # auto 与 json_object 都先尝试 json_object，失败时降级为不传。
+        return {"type": "json_object"}
 
     def _create(self, messages: list[dict], *, stream: bool = False):
-        """chat.completions.create：response_format 不支持时逐级降级重试。
+        """Call Chat Completions using the immutable effective config.
 
-        降级链：json_schema → json_object → xml（不传 response_format），
-        每档 400 时继续降一档，直到成功或耗尽（deepseek-reasoner 连 json_object 都不支持）。
-        模型级请求参数（temperature/max_tokens/top_p/thinking 等）随请求透传。
+        ``auto`` may retry once without a transport response hint.  Explicit
+        ``json_object``/``json_schema`` selections never silently downgrade.
         """
         from openai import BadRequestError
 
-        order = {"json_schema": "json_object", "json_object": "xml"}
-        for _ in range(3):  # 最多 3 次：json_schema / json_object / xml
-            kwargs: dict = {"model": self._model, "messages": messages, "stream": stream}
-            if self._request_params:
-                kwargs.update(self._request_params)
-            if self._extra_body:
-                kwargs["extra_body"] = self._extra_body
-            fmt = self._response_format()
+        kwargs: dict = {"model": self._config.model, "messages": messages, "stream": stream}
+        if self._config.request_params:
+            kwargs.update(copy.deepcopy(dict(self._config.request_params)))
+        if self._config.extra_body:
+            kwargs["extra_body"] = copy.deepcopy(dict(self._config.extra_body))
+        fmt = self._response_format()
+        if fmt:
+            kwargs["response_format"] = fmt
+        try:
+            return self._client.chat.completions.create(**kwargs)
+        except BadRequestError as exc:
+            if fmt and self._config.response_format == "auto":
+                kwargs.pop("response_format", None)
+                try:
+                    return self._client.chat.completions.create(**kwargs)
+                except BadRequestError as retry_exc:
+                    raise ProviderError(
+                        "响应格式协商失败",
+                        code="response_format_unsupported",
+                        diagnostic={
+                            "exception_type": type(retry_exc).__name__,
+                            "status_code": getattr(retry_exc, "status_code", None),
+                        },
+                        retryable=False,
+                    ) from retry_exc
             if fmt:
-                kwargs["response_format"] = fmt
-            try:
-                return self._client.chat.completions.create(**kwargs)
-            except BadRequestError:
-                if self._format_mode not in order:
-                    raise
-                self._format_mode = order[self._format_mode]
-        raise
+                raise ProviderError(
+                    "响应格式不被供应商支持",
+                    code="response_format_unsupported",
+                    diagnostic={
+                        "exception_type": type(exc).__name__,
+                        "status_code": getattr(exc, "status_code", None),
+                    },
+                    retryable=False,
+                ) from exc
+            raise self._provider_error(exc) from exc
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise self._provider_error(exc) from exc
 
-    def _chat_create(self, text: str, source: str, target: str, glossary: str, *, stream: bool = False):
-        """构建 messages 并调用 _create；若本次触发降级到 xml，改用 XML 模板重发。
+    def _chat_create(
+        self,
+        items: list[TranslationRequestItem],
+        source: str,
+        target: str,
+        glossary: str,
+        *,
+        stream: bool = False,
+    ):
+        from .translator import build_request_payload, build_system_prompt
 
-        返回：_create 的响应对象（流式时为 stream）。
-        """
-        mode_before = self._format_mode
-        system = self._system_prompt(source, target, glossary)
+        system = build_system_prompt(source, target, glossary, self.output_format)
         messages = [
             {"role": "system", "content": system},
-            {"role": "user", "content": text},
+            {"role": "user", "content": build_request_payload(items, self.output_format)},
         ]
-        resp = self._create(messages, stream=stream)
-        if self._format_mode != mode_before and self._format_mode == "xml":
-            # 降级发生在请求中途：模型这次收到的是 JSON 模板，重发一次换 XML 模板
-            system = self._system_prompt(source, target, glossary)
-            messages[0]["content"] = system
-            resp = self._create(messages, stream=stream)
-        return resp
+        return self._create(messages, stream=stream)
+
+    @staticmethod
+    def _provider_error(exc: Exception) -> ProviderError:
+        status_code = getattr(exc, "status_code", None)
+        diagnostic = {"exception_type": type(exc).__name__}
+        if isinstance(status_code, int):
+            diagnostic["status_code"] = status_code
+        if status_code in {402, 429}:
+            code = "usage_limit"
+            message = "模型服务额度不足或请求受限"
+            retryable = True
+        elif status_code in {408, 425, 409} or (
+            isinstance(status_code, int) and status_code >= 500
+        ):
+            code = "provider_unavailable"
+            message = "模型服务暂时不可用，请稍后重试"
+            retryable = True
+        elif status_code in {401, 403}:
+            code = "authentication_failed"
+            message = "模型服务认证失败，请检查 API Key"
+            retryable = False
+        elif status_code in {400, 404, 422}:
+            code = "provider_request_rejected"
+            message = "模型服务拒绝了请求，请检查模型参数"
+            retryable = False
+        else:
+            code = "provider_error"
+            message = "OpenAI 兼容 API 调用失败，请稍后重试"
+            retryable = True
+        return ProviderError(
+            message,
+            code=code,
+            diagnostic=diagnostic,
+            retryable=retryable,
+        )
 
     def _chat_with_glossary(
         self,
-        text: str,
+        items: list[TranslationRequestItem],
         source: str,
         target: str,
         glossary: str = "",
-    ) -> str:
-        """带术语库的 chat 调用，返回模型原始输出（JSON 或 XML 标签）。"""
+    ) -> ProviderCompletion:
         try:
-            resp = self._chat_create(text, source, target, glossary)
-            return resp.choices[0].message.content or ""
-        except Exception as e:
-            raise ProviderError(f"OpenAI 兼容 API 调用失败: {e}") from e
+            response = self._chat_create(items, source, target, glossary)
+            if not getattr(response, "choices", None):
+                raise ProviderError(
+                    "模型响应没有 choices",
+                    code="empty_response",
+                    diagnostic={"raw_response": response},
+                )
+            choice = response.choices[0]
+            message = choice.message
+            return ProviderCompletion(
+                content=getattr(message, "content", None) or "",
+                finish_reason=getattr(choice, "finish_reason", None),
+                refusal=getattr(message, "refusal", None),
+                raw_response=response,
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise self._provider_error(exc) from exc
+
+    def translate_items(
+        self,
+        items: list[TranslationRequestItem],
+        source: str,
+        target: str,
+        *,
+        glossary: str = "",
+        cancel_event: Any = None,
+    ) -> TranslationBlockResult:
+        if _cancel_requested(cancel_event):
+            raise ProviderError("翻译已取消", code="cancelled", retryable=False)
+        completion = self._chat_with_glossary(items, source, target, glossary)
+        if _cancel_requested(cancel_event):
+            raise ProviderError("翻译已取消", code="cancelled", retryable=False)
+        completion.require_complete()
+        try:
+            parsed = parse_result_by_format(
+                completion.content,
+                [item.id for item in items],
+                self.output_format,
+            )
+        except OutputContractError as exc:
+            raise OutputContractError(
+                exc.code,
+                str(exc),
+                diagnostic={
+                    "provider": completion.diagnostic(),
+                    "contract": exc.diagnostic,
+                },
+            ) from exc
+        return TranslationBlockResult(
+            status="succeeded",
+            expected_ids=tuple(item.id for item in items),
+            items=parsed,
+            diagnostic=completion.diagnostic(),
+        )
 
     def translate_stream(
         self,
-        texts: list[str],
+        items: list[TranslationRequestItem],
         source: str,
         target: str,
         glossary_entries: Optional[list[dict[str, Any]]] = None,
+        *,
+        cancel_event: Any = None,
     ):
-        """流式批量翻译：逐条 yield，含 thinking 思考过程（模型支持时）。"""
+        """Stream raw deltas, then emit one validated block outcome."""
         from ..glossary import format_glossary_prompt
 
         glossary = format_glossary_prompt(glossary_entries)
-        for i, text in enumerate(texts):
-            thinking_parts: list[str] = []
-            content_parts: list[str] = []
+        expected_ids = tuple(item.id for item in items)
+        thinking_parts: list[str] = []
+        content_parts: list[str] = []
+        finish_reason: str | None = None
+        refusal_parts: list[Any] = []
+        try:
+            stream = self._chat_create(
+                items,
+                source,
+                target,
+                glossary,
+                stream=True,
+            )
+            for chunk in stream:
+                if _cancel_requested(cancel_event):
+                    close = getattr(stream, "close", None)
+                    if callable(close):
+                        close()
+                    yield {
+                        "type": "block_cancelled",
+                        "ids": list(expected_ids),
+                        "error_code": "cancelled",
+                        "error": "翻译已取消",
+                        "diagnostic": None,
+                        "thinking": "".join(thinking_parts),
+                    }
+                    return
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                if getattr(choice, "finish_reason", None) is not None:
+                    finish_reason = choice.finish_reason
+                delta = getattr(choice, "delta", None)
+                if not delta:
+                    continue
+                thinking = getattr(delta, "reasoning_content", None)
+                if thinking:
+                    thinking_parts.append(thinking)
+                    yield {"type": "thinking", "delta": thinking}
+                refusal = getattr(delta, "refusal", None)
+                if refusal not in (None, "", False, []):
+                    refusal_parts.append(refusal)
+                content = getattr(delta, "content", None)
+                if content:
+                    content_parts.append(content)
+                    yield {"type": "content", "delta": content}
+            content = "".join(content_parts)
+            if _cancel_requested(cancel_event):
+                yield {
+                    "type": "block_cancelled",
+                    "ids": list(expected_ids),
+                    "error_code": "cancelled",
+                    "error": "翻译已取消",
+                    "diagnostic": None,
+                    "thinking": "".join(thinking_parts),
+                }
+                return
+            refusal: Any = refusal_parts or None
+            raw_response = {
+                "content": content,
+                "finish_reason": finish_reason,
+                "refusal": refusal,
+            }
+            completion = ProviderCompletion(
+                content=content,
+                finish_reason=finish_reason,
+                refusal=refusal,
+                raw_response=raw_response,
+            )
+            completion.require_complete()
             try:
-                stream = self._chat_create(text, source, target, glossary, stream=True)
-                for chunk in stream:
-                    delta = chunk.choices[0].delta if chunk.choices else None
-                    if not delta:
-                        continue
-                    # 思考过程（DeepSeek 的 reasoning_content / Anthropic 等）
-                    thinking = getattr(delta, "reasoning_content", None)
-                    if thinking:
-                        thinking_parts.append(thinking)
-                        # 思考过程也流式 yield，前端实时显示
-                        yield {"id": i, "type": "thinking", "delta": thinking}
-                    if delta.content:
-                        content_parts.append(delta.content)
-                        yield {"id": i, "type": "content", "delta": delta.content}
-                content = "".join(content_parts)
-                # 解析为逐行译文 + 不确定术语
-                from .translator import _parse_result
-
-                parsed = _parse_result(content)
-                yield {
-                    "id": i,
-                    "type": "done",
-                    "translations": parsed["translations"],
-                    "uncertain_terms": parsed["uncertain_terms"],
-                    "thinking": "".join(thinking_parts),
-                }
-            except Exception as e:
-                yield {
-                    "id": i,
-                    "type": "done",
-                    "translation": text,
-                    "uncertain_terms": [{"term": text[:80], "reason": "翻译失败，保留原文", "candidate": ""}],
-                    "thinking": "".join(thinking_parts),
-                    "error": str(e),
-                }
+                parsed = parse_result_by_format(
+                    content,
+                    list(expected_ids),
+                    self.output_format,
+                )
+            except OutputContractError as exc:
+                raise OutputContractError(
+                    exc.code,
+                    str(exc),
+                    diagnostic={
+                        "provider": completion.diagnostic(),
+                        "contract": exc.diagnostic,
+                    },
+                ) from exc
+            yield {
+                "type": "block_succeeded",
+                "items": [item.to_dict() for item in parsed],
+                "thinking": "".join(thinking_parts),
+                "diagnostic": completion.diagnostic(),
+            }
+        except OutputContractError as exc:
+            yield {
+                "type": "block_failed",
+                "ids": list(expected_ids),
+                "error_code": exc.code,
+                "error": str(exc),
+                "diagnostic": exc.diagnostic,
+                "retryable": exc.retryable,
+                "thinking": "".join(thinking_parts),
+            }
+        except ProviderError as exc:
+            event_type = "block_cancelled" if exc.code == "cancelled" else "block_failed"
+            yield {
+                "type": event_type,
+                "ids": list(expected_ids),
+                "error_code": exc.code,
+                "error": str(exc),
+                "diagnostic": exc.diagnostic,
+                "retryable": exc.retryable,
+                "thinking": "".join(thinking_parts),
+            }
+        except Exception as exc:
+            error = self._provider_error(exc)
+            yield {
+                "type": "block_failed",
+                "ids": list(expected_ids),
+                "error_code": error.code,
+                "error": str(error),
+                "diagnostic": error.diagnostic,
+                "retryable": error.retryable,
+                "thinking": "".join(thinking_parts),
+            }
 
 
 class MirrorPool:
@@ -351,11 +841,15 @@ class MirrorPool:
 
     def execute(self, func, *args, **kwargs):
         """尝试各镜像站执行 func，全部失败抛 ProviderError。"""
-        errors: list[str] = []
+        errors: list[dict[str, Any]] = []
         # 按优先级 + 冷却状态重排可用镜像
         order = [m for m in self.mirrors if self._is_available(m)]
         if not order:
-            raise ProviderError("所有镜像站均在冷却中，稍后再试")
+            raise ProviderError(
+                "所有镜像站均在冷却中，稍后再试",
+                code="mirrors_cooling",
+                diagnostic={"mirror_count": len(self.mirrors)},
+            )
         for mirror in order:
             try:
                 result = func(mirror, *args, **kwargs)
@@ -363,11 +857,18 @@ class MirrorPool:
                 return result
             except ProviderError as e:
                 self._mark_failure(mirror)
-                errors.append(f"{mirror}: {e}")
+                errors.append({"mirror": mirror, "code": e.code, "retryable": e.retryable})
             except Exception as e:  # 非 ProviderError 的异常也视为失败
                 self._mark_failure(mirror)
-                errors.append(f"{mirror}: {type(e).__name__}: {e}")
-        raise ProviderError("所有镜像站均失败: " + " | ".join(errors))
+                errors.append(
+                    {"mirror": mirror, "code": "provider_error", "exception_type": type(e).__name__}
+                )
+        raise ProviderError(
+            "所有镜像站均失败，请稍后重试",
+            code="all_mirrors_failed",
+            diagnostic={"attempts": errors},
+            retryable=any(attempt.get("retryable", True) for attempt in errors),
+        )
 
     def snapshot(self) -> list[dict]:
         """返回各镜像站状态（GUI 展示用）。"""
@@ -408,48 +909,85 @@ class GoogleProvider(Provider):
         self._timeout = timeout
 
     def _translate_one(self, mirror: str, text: str, source: str, target: str) -> str:
-        url = f"{mirror}/translate_a/single"
+        url = f"{mirror.rstrip('/')}/translate_a/single"
         params = {"client": "gtx", "sl": source, "tl": target, "dt": "t", "q": text}
         try:
-            r = requests.get(
+            r = requests.post(
                 url,
-                params=params,
+                data=params,
                 timeout=self._timeout,
                 proxies=self._proxies,
                 headers={"User-Agent": "Mozilla/5.0"},
             )
             if r.status_code == 429:
-                raise ProviderError("HTTP 429 限流")
+                raise ProviderError(
+                    "Google 服务请求受限",
+                    code="usage_limit",
+                    retryable=True,
+                    diagnostic={"status_code": 429},
+                )
+            if r.status_code in {408, 425, 409} or r.status_code >= 500:
+                raise ProviderError(
+                    "Google 服务暂时不可用",
+                    code="provider_unavailable",
+                    retryable=True,
+                    diagnostic={"status_code": r.status_code},
+                )
+            if r.status_code in {401, 403}:
+                raise ProviderError(
+                    "Google 镜像认证失败",
+                    code="authentication_failed",
+                    retryable=False,
+                    diagnostic={"status_code": r.status_code},
+                )
             r.raise_for_status()
             data = r.json()
-            segments = [seg[0] for seg in data[0]]
-            return "".join(segments)
+            if not isinstance(data, list) or not data or not isinstance(data[0], list):
+                raise ProviderError(
+                    "Google 返回格式无效",
+                    code="invalid_response",
+                    retryable=False,
+                )
+            segments: list[str] = []
+            for segment in data[0]:
+                if not isinstance(segment, list) or not segment or not isinstance(segment[0], str):
+                    raise ProviderError(
+                        "Google 返回格式无效",
+                        code="invalid_response",
+                        retryable=False,
+                    )
+                segments.append(segment[0])
+            result = "".join(segments)
+            if text and not result.strip():
+                raise ProviderError("Google 返回了空响应", code="empty_response")
+            return result
         except ProviderError:
             raise
-        except Exception as e:
-            raise ProviderError(f"{type(e).__name__}: {e}") from e
+        except requests.Timeout as exc:
+            raise ProviderError(
+                "Google 请求超时",
+                code="timeout",
+                diagnostic={"exception_type": type(exc).__name__},
+            ) from exc
+        except requests.RequestException as exc:
+            raise ProviderError(
+                "Google 请求失败",
+                code="network_error",
+                diagnostic={"exception_type": type(exc).__name__},
+            ) from exc
+        except (ValueError, TypeError, IndexError) as exc:
+            raise ProviderError(
+                "Google 返回格式无效",
+                code="invalid_response",
+                retryable=False,
+                diagnostic={"exception_type": type(exc).__name__},
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(
+                "Google 翻译失败",
+                code="provider_error",
+                diagnostic={"exception_type": type(exc).__name__},
+            ) from exc
 
     def translate(self, text: str, source: str, target: str) -> str:
         return self._pool.execute(self._translate_one, text, source, target)
-
-    def translate_stream(
-        self,
-        texts: list[str],
-        source: str,
-        target: str,
-        glossary_entries: Optional[list[dict[str, Any]]] = None,
-    ):
-        """流式批量翻译（Google 无思考过程，逐条 yield 结果）。"""
-        del glossary_entries
-        for i, text in enumerate(texts):
-            try:
-                translation = self.translate(text, source, target)
-                yield {"id": i, "type": "done", "translation": translation, "uncertain_terms": [], "thinking": None}
-            except ProviderError:
-                yield {
-                    "id": i,
-                    "type": "done",
-                    "translation": text,
-                    "uncertain_terms": [{"term": text[:80], "reason": "翻译失败，保留原文", "candidate": ""}],
-                    "thinking": None,
-                }
