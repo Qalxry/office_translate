@@ -1,269 +1,103 @@
 # office_translate
 
-办公文档翻译套件：把文档里需要翻译的文本导出成「一行一条」的 TXT，人工翻译后再回填，
-并额外产出「原文-译文对照版」与「仅译文版」，且**完全保留原文档的所有样式**。
+面向办公用户的本地 GUI 文档翻译工具。它在本机启动一个 Web UI，支持直接用浏览器打开，也可以用很轻量的 WebView 壳打开；不提供 SaaS、多用户服务、文档处理 CLI 或公共 Python API。`python -m office_translate` 只是 GUI 启动器。
 
-提供**两种使用方式**：
-- **图形界面（GUI）**：5 步流程（任务 → 提取 → AI 翻译 → 审核 → 回填），
-  支持 AI 翻译、不确定术语人工审核、分类术语库。推荐日常使用。
-- **命令行（CLI）**：手动分步执行，或 `auto` 一键翻译（适合脚本/批量）。
+当前正式支持 `.xlsx`。软件会从工作簿提取可翻译单元格，使用人工或 AI 译文逐项审核，最后一次性生成“仅译文”和“原文-译文对照”两份文件。
 
-当前支持 **xlsx**（Excel），架构已按「格式无关核心 + 格式适配器」设计，
-可扩展 **docx**（Word）、**xls** 等格式，见「扩展新格式」。
-
-## 安装
+## 安装与启动
 
 ```bash
 pip install -r requirements.txt
-# GUI 用原生窗口需另装（可选，不装则自动用浏览器打开）：
-pip install pywebview
+python -m office_translate
 ```
 
-## 图形界面（推荐）
+默认优先尝试 pywebview；未安装时自动打开默认浏览器。开发时也可以使用：
 
 ```bash
-python -m office_translate gui
+python -m office_translate --no-webview
 ```
 
-自动启动本地 Web 服务并在浏览器（或 pywebview 原生窗口）打开界面。
-界面包含三个视图：
+服务只监听本机回环地址，不是局域网或公网服务。Vue 运行时随应用一起分发，离线时也可以加载页面。
 
-| 视图 | 功能 |
+## GUI 工作流
+
+1. **任务**：选择 `.xlsx` 文件并创建任务。
+2. **提取**：读取工作表中的文本单元格，生成带稳定 ID 和 `source_revision` 的原文产物。
+3. **AI 翻译**：选择 Google 镜像或 OpenAI Compatible 供应商，逐条查看思考过程和译文预览。
+4. **审核**：处理模型报告的不确定术语，可接受、修改或忽略。
+5. **导出**：只有完整成功、修订一致且满足导出门控的结果才能生成文件。
+
+页面中的任务、设置、术语库和翻译作业都有加载、空状态、错误和重试状态；翻译列表和思考面板在用户停留在底部附近时会自动粘滞滚动。
+
+同一术语影响多行时，审核卡片会逐行显示“当前译文 / 应用后译文”。用户可以只勾选需要修改的行，未选行保持原译文。停止翻译只会阻止本地继续提交结果；已经发出的供应商请求仍可能完成并产生费用。
+
+`.xls` 不在当前版本支持范围内。请在 Excel/WPS 中选择“另存为”，保存为 `.xlsx` 后重新导入。
+
+## AI 输出协议
+
+模型内容协议在设置中独立于模型的 `response_format` 选项：
+
+- **XML**：默认协议，使用带 ID 的 `<items>` 结构，兼容性最好。
+- **JSON**：使用严格的 `items[]` 结构。`response_format` 默认不发送强化参数，以便模型内容按元素逐条解析；`json_object` / `json_schema` 仅在用户明确选择时发送，部分供应商可能把这两种响应整包返回。
+- **文本**：按输入顺序逐条返回；每条内部除普通空格外的换行、制表等空白字符使用字面转义表示。
+
+流式界面只显示已解析的逐条预览，不显示原始 XML/JSON 正文。服务端会校验 ID 集合、终止原因、拒答、截断和 summary；部分成功或失败结果不能导出。
+
+内部产物使用结构化 JSON 保存真实换行和反斜杠，不再通过物理 TXT 行拆分记录。重新提取会使旧译文和旧输出失效；当前版本不兼容旧任务产物或旧模型输出。
+
+## 设置与密钥
+
+设置页支持：
+
+- OpenAI、DeepSeek、Claude（OpenAI Compatible）和 Ollama 等供应商；
+- Base URL、模型级上下文/输出上限/温度/思考参数；
+- Google 镜像站、源语言、目标语言和并发数；
+- 分类术语库的查看、新增、编辑和删除。
+
+API Key 只由本地后端保存和使用。设置 GET 响应只返回 `api_key_masked` 与 `api_key_configured`，前端不会把已保存密钥放入页面状态或翻译请求。设置与术语库使用进程内锁、同目录临时文件、`fsync` 和原子替换，避免并发保存丢更新或留下半文件。
+
+错误卡片可以复制最小诊断信息，只包含时间、任务、操作和错误编号，不包含文件路径、API Key 或文档正文。
+
+## 文件与数据边界
+
+浏览器选择的文件会先通过本地 multipart 接口暂存到配置根下的 `data/input/`，再由任务服务复制到任务工作区；`.xls` 会在上传前拒绝并给出另存为提示。
+
+任务目录中的核心状态由 manifest 和版本化结构化产物组成，主要包括：
+
+- `SourceArtifact`：输入文件摘要、`source_revision`、原文 ID、文本和单元格位置；
+- `TranslationArtifact`：`translation_revision`、逐项译文状态、审核信息和诊断；
+- `OperationSummary`：成功、失败、取消 ID 集合及导出门控依据；
+- `data/logs/office_translate.log`：本地滚动诊断日志，只记录时间、操作、任务和错误编号，不记录 API Key、请求正文或用户文档内容。
+
+程序不会把 CLI 或库 API 作为正式入口维护。格式适配器和任务服务属于 GUI 的内部实现，外部集成应通过 GUI 完成。
+
+## 测试
+
+```bash
+python -m pytest -q
+```
+
+测试覆盖结构化产物、三种 AI 输出协议、流式事件、修订门控、原子存储、GUI API、离线静态资源和本地启动边界。测试不访问真实模型或网络服务。
+
+浏览器 E2E 需要开发依赖和本地 Chromium：
+
+```bash
+pip install -r requirements-dev.txt
+playwright install chromium
+python -m pytest -q tests/e2e/test_gui_workflow.py -m e2e
+```
+
+浏览器验收覆盖 900×700、1024×768 和 1280×800 桌面窗口、纯键盘主流程、模态框焦点、失败重试、刷新恢复、逐行审核和富文本策略。手机布局不属于当前产品范围。
+
+开发者需要了解内部 REST、SSE 和结构化产物时，参阅 [docs/gui-api.md](docs/gui-api.md)。
+
+## 当前格式边界
+
+| 内容 | 当前行为 |
 |---|---|
-| **工作流** | 5 步流程：任务 → 提取 → AI 翻译 → 审核 → 回填 |
-| **术语库** | 按类别浏览/新增/编辑/删除术语 |
-| **设置** | AI 供应商管理、语言、并发、Google 镜像站 |
-
-**5 步流程**（顶部步骤条，可回跳）：
-1. **任务**：选择已有任务，或输入文件路径新建（支持「浏览文件」按钮唤起系统文件选择器）
-2. **提取**：解析文档，生成去重原文与位置映射
-3. **AI 翻译**：选引擎（Google 镜像站 / OpenAI 兼容供应商）与模型，批量翻译
-4. **审核**：模型自报的不确定术语以卡片展示，可接受（选类别入库）/ 修改 / 忽略
-5. **回填**：确认译文后生成「仅译文」与「原文-译文对照」两份文件
-
-### GUI 设置
-
-**设置**视图（打开后自动读取 `data/gui_settings.json`，改后自动保存）：
-
-- **AI 供应商**：预置 OpenAI / DeepSeek / Claude（OpenAI 兼容）/ Ollama 四个，
-  可新增/删除/编辑 Base URL、API Key、模型列表；点「设为使用」切换当前供应商。
-- **语言**：源语言（默认 en）、目标语言（默认 zh-CN）。
-- **并发数**：批量翻译并发线程数（默认 4）。
-- **Google 镜像站**：失败自动切换的镜像站列表（默认三个实测可用的），
-  可编辑、保存、一键「测试全部镜像站」测连通性与延迟排序。
-
-## CLI 使用
-
-### 手动分步
-
-```bash
-# 1) 建任务（原始文件会被复制进 work/<job>/；job 缺省时按时间戳自动命名）
-python -m office_translate init eval_2024 -i "input/EVAL 2024 - Update 250210(2).xlsx"
-python -m office_translate init -i "input/EVAL 2024 - Update 250210(2).xlsx"  # 自动命名
-
-# 2) 提取原文
-python -m office_translate extract eval_2024
-
-# 3) 翻译：复制 source.txt 为 translated.txt，逐行替换为译文
-cp work/eval_2024/source.txt work/eval_2024/translated.txt
-# 编辑 work/eval_2024/translated.txt ...
-
-# 4) 回填（生成 work/eval_2024/output/ 下两份 xlsx）
-python -m office_translate apply eval_2024
-
-# 5) 查看工作区任务及进度
-python -m office_translate list
-```
-
-### 一键翻译（AI 自动完成）
-
-```bash
-# 用 GUI 设置里的 AI 配置（供应商/模型/镜像站）自动完成 提取→翻译→回填
-python -m office_translate auto eval_2024
-
-# 或用命令行参数覆盖
-python -m office_translate auto eval_2024 --engine openai \
-    --base-url https://api.deepseek.com/v1 --api-key sk-xxx --model deepseek-chat
-python -m office_translate auto eval_2024 --engine google \
-    --mirrors "https://google-translate-proxy.tantu.com,https://translate.renwole.com"
-```
-
-`auto` 读 `data/gui_settings.json`（与 GUI 共用同一套配置）；未配置时 Google 引擎用内置默认镜像站。
-
-### 常用可选参数
-
-| 命令 | 参数 | 说明 |
-|---|---|---|
-| 所有 | `-c, --config <路径>` | 指定配置文件（默认 `config.yaml`，不存在时用内置默认值） |
-| init | `job` | 任务名（可省略，缺省按时间戳 `YYYYMMDD_HHMMSS` 自动生成，重名时追加 `_1`） |
-| init | `--sep <SEP>` | 本任务的对照版分隔符，字面 `\n` `\r` `\t` `\\` 会还原 |
-| apply | `--sep <SEP>` | 覆盖本任务分隔符，同上 |
-| apply | `--translated <路径>` | 覆盖仅译文版输出路径 |
-| apply | `--bilingual <路径>` | 覆盖对照版输出路径 |
-
-## 关键约定
-
-- **一行一条文本**：原文本中的 `\r` `\n` 在写入 TXT 时已转义为字面 `\\r` `\\n`，回填时会自动还原。译文里需要换行就写 `\n`。
-- **去重**：完全相同的原文只导出一次，回填时同步到所有出现位置。
-- **样式保留**：apply 阶段先**物理复制原文档**，再替换文本，确保字体、颜色、合并单元格、列宽、边框等与原文件一致。
-- **仅处理字符串**：数值、布尔、公式、日期、空单元格均不导出，保持原样。
-- **对照版格式**：单元格值 = 原文 + 分隔符 + 译文（分隔符默认换行）。
-
-## 目录结构
-
-```
-office_translate/
-├─ office_translate/        # 套件包
-│  ├─ __init__.py           # 顶层 extract()/apply()，按扩展名分发
-│  ├─ __main__.py           # python -m 入口
-│  ├─ cli.py                # 命令行（init / extract / apply / auto / list / gui）
-│  ├─ config.py             # 配置加载 / 任务脚手架 / 路径推导
-│  ├─ base.py               # FormatAdapter 抽象基类 + 注册表
-│  ├─ escape.py             # \r \n 转义/还原（格式无关）
-│  ├─ glossary.py           # 分类术语库（加载/新增/匹配精简/prompt 注入）
-│  ├─ ai/                   # AI 翻译模块
-│  │  ├─ provider.py        # Provider + OpenAI 兼容 + Google 镜像站 + MirrorPool 切换
-│  │  └─ translator.py      # 批量翻译编排 + 不确定术语 JSON 解析
-│  ├─ gui/                  # 图形界面
-│  │  ├─ server.py          # FastAPI REST 后端
-│  │  ├─ launcher.py        # 启动服务 + 浏览器/pywebview
-│  │  └─ web/index.html     # Vue 单页前端（5 步流程）
-│  └─ formats/              # 格式适配器集合
-│     └─ xlsx/              # xlsx 适配器（extractor + applier）
-├─ config.yaml              # 全局配置（工作区/输出/分隔符）
-├─ data/                    # 本地数据（gitignore）：GUI 设置 / 分类术语库
-│  ├─ gui_settings.json     # GUI 设置（AI 供应商/镜像站/语言/并发），GUI 或 auto 生成
-│  └─ glossary.json         # 分类术语库（审核沉淀 + 手动管理）
-├─ input/                   # 原始文档（gitignore）
-├─ work/                    # 工作区（gitignore），每个任务一个文件夹
-│  └─ <job>/
-│     ├─ job.yaml           # 任务配置
-│     ├─ <原始文件>.xlsx     # init 复制的输入副本
-│     ├─ source.txt         # extract 产物：去重原文
-│     ├─ map.json           # extract 产物：位置映射
-│     ├─ translated.txt     # 人工翻译
-│     └─ output/            # apply 产物
-├─ test/                    # 测试样例数据（gitignore）
-├─ tests/                   # pytest 单测（自包含）
-├─ requirements.txt
-└─ README.md
-```
-
-## AI 翻译与术语库
-
-**AI 翻译引擎**：
-- **Google（镜像站）**：直接请求镜像站 `/translate_a/single` 端点（与官方同协议），
-  默认三个实测可用的镜像站；**失败自动切换**（连续失败进入冷却，冷却后恢复），
-  全部失败才报错。GUI 设置页可编辑列表并「测试全部镜像站」测速排序。
-- **OpenAI 兼容**：一套代码覆盖 OpenAI / DeepSeek / Claude / Ollama 等，
-  在 GUI 设置页配置供应商（Base URL + API Key + 模型列表）。
-
-**不确定术语审核**：AI 翻译时，模型对把握不足的术语（专有名词、缩写、多义词等）
-会自报为 `uncertain_terms`（含原因与候选译法），在 GUI 审核步骤以卡片展示，
-可接受（选类别入术语库）/ 修改 / 忽略。Google 引擎无自报能力，直接返回译文。
-
-**分类术语库**（`data/glossary.json`）：
-- 术语按**类别**组织（如「汽车行业」「软件」），审核接受时选择存入类别。
-- **匹配精简化**：翻译前只把「确实出现在本次待译文本中的术语」注入 prompt，
-  控制上下文、减少干扰。
-- **按类别选用**：翻译时可勾选使用哪些类别。
-- 手动管理：GUI 术语库视图按类别浏览/新增/编辑/删除（含整类删除）。
-
-## 配置说明
-
-**全局配置 `config.yaml`**（缺省项用内置默认值）：
-
-```yaml
-work_dir: work      # 工作区根目录，每个翻译任务一个子文件夹
-output_dir: output  # 每个任务内 apply 产物的存放子目录名
-sep: '\n'           # 对照版分隔符，字面 \n \r \t 会还原为真实字符
-```
-
-**GUI 设置 `data/gui_settings.json`**（GUI 设置页自动生成与维护，`auto` 命令共用）：
-
-```json
-{
-  "ai": {
-    "engine": "google",
-    "providers": {
-      "openai": {"name": "OpenAI", "base_url": "...", "api_key": "", "models": ["gpt-4o-mini"]}
-    },
-    "active_provider": "openai",
-    "mirrors": ["https://google-translate-proxy.tantu.com"],
-    "source_lang": "en",
-    "target_lang": "zh-CN",
-    "concurrency": 4
-  }
-}
-```
-
-**任务配置 `work/<job>/job.yaml`**（由 init 自动生成，一般无需手改）：
-
-```yaml
-input: EVAL 2024 - Update 250210(2).xlsx  # 输入副本（相对任务目录）
-source_path: /原始/文件/路径.xlsx           # 原始路径，仅供追溯
-sep: '\n'                                 # 可选，覆盖全局默认
-```
-
-分隔符优先级：命令行 `--sep` > `job.yaml` 的 `sep` > `config.yaml` 的 `sep` > 内置默认 `\n`。
-复制进任务目录时，文件名中的不可断行空格（U+00A0）会替换为普通空格。
-
-## 作为库调用
-
-```python
-from office_translate import extract, apply
-
-extract("input/sample.xlsx", "work/source.txt", "work/map.json")
-# ... 翻译 source.txt -> translated.txt ...
-apply(
-    original="input/sample.xlsx",
-    json_path="work/map.json",
-    translated_txt="work/translated.txt",
-    output_translated="work/out_translated.xlsx",
-    output_bilingual="work/out_bilingual.xlsx",
-)
-```
-
-`extract` / `apply` 按文件扩展名自动分发到对应格式适配器；对未支持的格式会抛出
-`UnsupportedFormatError`（含当前支持列表）。
-
-## .xls 旧格式处理
-
-`.xls`（旧版 Excel 二进制格式）**不直接支持**。由于 xlutils 生态老化，就地改 .xls
-会导致样式（字体、边框等）丢失，因此采用「先转 xlsx 再走现有套件」的策略：
-
-- **Windows + 已装 Excel**：`init` 时检测到 `.xls` 输入会自动调用 PowerShell 的
-  Excel COM 转换为同目录 `.xlsx`（保真度最高），然后继续正常流程。
-- **其他情况**：`init` 会提示手动转换并给出操作步骤（Excel/WPS 另存为 .xlsx 后
-  重新作为输入传给 init）。
-
-## 扩展新格式
-
-以新增 docx 为例，三步即可挂入套件，核心与 CLI 无需任何改动：
-
-1. 新建 `office_translate/formats/docx/__init__.py`，实现 `DocxAdapter`：
-
-   ```python
-   from ...base import FormatAdapter, register_adapter
-
-   class DocxAdapter(FormatAdapter):
-       format = "docx"
-       extensions = (".docx",)
-
-       def extract(self, src_path, txt_path, json_path):
-           """导出去重原文 txt 与位置映射 json（约定见 base.FormatAdapter）。"""
-           ...
-
-       def apply(self, original, json_path, translated_txt,
-                 output_translated, output_bilingual, sep):
-           """以 original 为模板回填译文，保留全部样式。"""
-           ...
-
-   register_adapter(DocxAdapter)
-   ```
-
-2. 在 `office_translate/formats/__init__.py` 中 `from . import docx`。
-3. 完成。`init / extract / apply` 命令、顶层 `extract()` / `apply()` 自动识别 `.docx`。
-
-适配器的两个方法可复用 `office_translate/escape.py` 的转义工具与
-`xlsx/formats/xlsx/applier.py` 中「物理拷贝 + 定位回填」的思路。
+| 普通字符串、单一文字样式 | 自动提取与回填 |
+| 数值、公式、空单元格 | 保持原样，不翻译 |
+| 多 run 富文本 | 默认转为纯文本译文并翻译；可明确选择保留受影响单元格原文与局部格式 |
+| 超过 Excel 单元格上限的译文 | 任一输出的最终单元格超过 32,767 字符时，两份文件都不发布；对照版会计算原文、分隔符和译文总长度 |
+| `.xls` | 拒绝并提示另存为 `.xlsx` |
+| `.docx` | 记录为未来功能，当前不支持 |
